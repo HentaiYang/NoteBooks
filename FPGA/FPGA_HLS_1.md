@@ -39,6 +39,7 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 	  因此避免了全局变量，public成员变量和config机制通讯时带来的不便
 
 ![在这里插入图片描述](./images/HLS_1_2.jpg)
+
 &emsp;&emsp;[图源-SystemC简介](https://blog.csdn.net/gsjthxy/article/details/126099348)
 
 下图为SystemC框架图，**底层是C++及其标准库**，也可包括其他的C++库，如boost库。
@@ -51,6 +52,7 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 * **SystemC channel/interface/port/export**：用于实现模块间通信
 
 ![在这里插入图片描述](./images/HLS_1_3.jpg)
+
 &emsp;&emsp;[图源-SystemC简介](https://blog.csdn.net/gsjthxy/article/details/126099348)
 
 ****
