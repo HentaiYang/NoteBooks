@@ -1,18 +1,18 @@
 ==看前提醒：作者入门尚浅，本文基本是找到的教程的简略版笔记，本文主要为学习[作者：Jasper兰](https://blog.csdn.net/suiyaopu8894?type=blog)的FPGA教程系列，并结合部分学习中查找的其他资料整理而成。==
 ## 目录
-* [1.可配置逻辑块](#1.可配置逻辑块)
-* [2.SLICE组成简介](#2.SLICE组成简介)
-* [3.LUT](#3.LUT)
-* [4.DRAM](#4.DRAM)
-* [5.MUX](#5.MUX)
-* [6.进位链](#6.进位链)
-* [7.存储单元](#7.存储单元)
-* [8.SLICE和CLB](#8.SLICE和CLB)
-* [9.DSP48E1](#9.DSP48E1)
-* [10.BRAM](#10.BRAM)
+* [1.可配置逻辑块](#p1)
+* [2.SLICE组成简介](#p2)
+* [3.LUT](#p3)
+* [4.DRAM](#p4)
+* [5.MUX](#p5)
+* [6.进位链](#p6)
+* [7.存储单元](#p7)
+* [8.SLICE和CLB](#p8)
+* [9.DSP48E1](#p9)
+* [10.BRAM](#p10)
 
 ---
-# 1.可配置逻辑块
+# 1.可配置逻辑块<a id="p1"></a>
 &emsp;&emsp; **可配置逻辑块（Configurable Logic Block，CLB）** 是FPGA芯片的底层元件之一，如果将FPGA比作人体，那么CLB就是组成人体的细胞。
 
 <div align="center"> <img src="./images/2/CLB.jpg" /> </div>
@@ -20,7 +20,7 @@
 &emsp;&emsp; <font color=red>**CLB由SLICE组成**</font>，不同架构的SLICE种类不一样，Xilinx7系中就有两种SLICE：**SLICEL、SLICEM**，SLICEM比SLICEL多了写存储数据功能。
 
 ---
-# 2.SLICE组成简介
+# 2.SLICE组成简介<a id="p2"></a>
 FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 * LUT（look up table）：查找表
 * MUX（Multiplexer）：多路选择器
@@ -34,7 +34,7 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 <div align="center"> <img src="./images/2/SLICEM.jpg" /> </div>
 
 ---
-# 3.LUT
+# 3.LUT<a id="p3"></a>
 &emsp;&emsp;**查找表（Look Up Table, LUT）**，FPGA以LUT代替门电路，任意一个 **6位输入1位输出（6IN-1OUT）** 的门电路，都可以用LUT6来表示。<font color=red>**LUT6本质是64*1的ROM（Read Only Memory）**</font>，深度为64，位宽为1，将6位输入当做6位地址线，则输出就是当前地址存储位。
 
 <div align="center"> <img src="./images/2/LUT6.jpg" /> </div>
@@ -50,7 +50,7 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 * ==输入大于1位，或输入比6位多时==，则用**多个LUT6并行处理**，这会使多个输入途径多条路径，而路径之间延迟难以一致，此时需要使用<font color=red>**寄存器**</font>来进行同步。
 
 ---
-# 4.DRAM
+# 4.DRAM<a id="p4"></a>
 下图中，左侧为SLICEM，右侧为SLICEL，二者仅红框部分，也就是LUT6部分不同。
 
 <div align="center"> <img src="./images/2/SLICEM_L.jpg" /> </div>
@@ -130,7 +130,7 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 <div align="center"> <img src="./images/2/移位寄存器时序图.jpg"  /> </div>
 
 ---
-# 5.MUX
+# 5.MUX<a id="p5"></a>
 &emsp;&emsp;**多路选择器（Multiplexer，MUX）**，如下图为四选一数据选择器（MUX4_1），由2位地址码A[1:0]选择将数据输入D[3:0]的其中一位传送到输出。因为也是6位输入1位输出，所以**MUX4_1本质上也是LUT6**，只不过它有着特定的连线方式
 
 <div align="center"> <img src="./images/2/MUX4_1.jpg"  /> </div>
@@ -152,7 +152,7 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 
 ---
 
-# 6.进位链
+# 6.进位链<a id="p6"></a>
 基础补充：全加器。
 全加器最低位CIN置1为减法，如0101-0010=0011，0101补码不变，(-0010)补码为反码+1，将0101和0010的反码传入，CIN置1即为反码+1操作，等价于0101+1110=0011。
 
@@ -194,7 +194,7 @@ endmodule
 <div align="center"> <img src="./images/2/进位链_逻辑区域.jpg"  /> </div>
 
 ---
-# 7.存储单元
+# 7.存储单元<a id="p7"></a>
 基础补充：触发器，通过时钟沿到来改变存储的输出状态；锁存器，通过电平变换改变存储的输出状态。FPGA中触发器使用较多。
 * 触发器特性：在下一次时钟沿到来之前，输出Q不变，时钟沿触发时，输出D的电平转移到Q。以3.3VMOS为例，输入电平高于高电平阈值2.0V时，Q输出高电平3.3V，输入低于低电平阈值0.7V时，Q输出低电平0V。相比LUT移位寄存器的电平转移，触发器可以降低亚稳态的影响（如2.1V、0.7V）。
 
@@ -239,7 +239,7 @@ endmodule
 * 所在行LUT6的O6输出、MUX7/8的输出、进位链的输出作为输入。
 
 ---
-# 8.SLICE和CLB
+# 8.SLICE和CLB<a id="p8"></a>
 小节2中给出过的SLICEM架构图如下，可以分为相同的4行，SLICEL与之类似，差别仅为LUT6不具备存储功能。
 
 <div align="center"> <img src="./images/2/SLICEM.jpg" /> </div>
@@ -261,7 +261,7 @@ SLICE在CLB中的排列：
 <div align="center"> <img src="./images/2/CLB数据互联.jpg" /> </div>
 
 ---
-# 9.DSP48E1
+# 9.DSP48E1<a id="p9"></a>
 DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容较多，仅作简要总结。DSP48E1的简要架构如下：
 <div align="center"> <img src="./images/2/DSP48E1简图.jpg" /> </div>
 
@@ -289,7 +289,7 @@ DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容�
 <div align="center"> <img src="./images/2/模式探测器.jpg" /> </div>
 
 ---
-# 10.BRAM
+# 10.BRAM<a id="p10"></a>
 &emsp;&emsp;一般来说，**存储较大数据时用BRAM，存储较小数据时用DRAM**，分界线并不严格，跑通就行。
 
 &emsp;&emsp;BRAM有 **单口（Single Port，SP），简单双端口（Single Dual Port，SDP），真双端口（True Dual Port，TDP）** 等，与DRAM类似。

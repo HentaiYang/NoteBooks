@@ -1,12 +1,12 @@
 ## 目录
-* [1.HLS简介](#1.HLS简介)
-* [2.制导语句和约束](#2.制导语句和约束)
-* [3.SystemC](#3.SystemC)
-* [4.Verilog和VHDL](#4.Verilog和VHDL)
-* [5.Verilog和C的区别](#5.Verilog和C的区别)
+* [1.HLS简介](#p1)
+* [2.制导语句和约束](#p2)
+* [3.SystemC](#p3)
+* [4.Verilog和VHDL](#p4)
+* [5.Verilog和C的区别](#p5)
 
 ****
-# 1.HLS简介
+# 1.HLS简介<a id="p1"></a>
 **HLS（High Level Synthesis）**，高层次综合工具，可以使用户通过添加[制导语句（directives）和约束（constrains）](#2.制导语句和约束)，将C/C++/[System C](#3.SystemC)代码直接转为FPGA RTL（[Verilog，VHDL](#4.Verilog和VHDL)，SystemC）代码。
 
 	Xilinx最新的HLS设计工具已经从Vivado HLS改为Vitis HLS
@@ -14,7 +14,7 @@
 Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和RAM/DSP块上。
 
 ****
-# 2.制导语句和约束
+# 2.制导语句和约束<a id="p2"></a>
 **制导语句（directives、指导语句）**，依赖于源程序，开发中会在源程序中加入一些类似于注释的语句，称为制导语句。特别的在C语言中，可以使用 <font color=Red>**#pragma**</font> 来标记制导语句。常见的标准为OpenMP，较新的还有OpenACC、OpenHMPP。
 
 ![在这里插入图片描述](./images/1/FPGA_1_1.jpg)
@@ -25,7 +25,7 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 约束（constrains），根据目标设备的资源限制，设置合适的资源约束，以限制资源使用量并优化性能。
 
 ****
-# 3.SystemC
+# 3.SystemC<a id="p3"></a>
 **系统建模语言**，基于C++开发的开源library，理论上和常见的boost库没有任何差别。只要环境支持C++，就可以进行SystemC建模和仿真。可以让软硬件并行开发，加快产品面世，其特点包括：
 * 硬件架构探索，建立算法、性能模型；
 * 验证工程师作为参考模型（通过DPI接口调用）；
@@ -56,7 +56,7 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 &emsp;&emsp;[图源-SystemC简介](https://blog.csdn.net/gsjthxy/article/details/126099348)
 
 ****
-# 4.Verilog和VHDL
+# 4.Verilog和VHDL<a id="p4"></a>
 **HDL（Hardware Description Language，硬件描述语言）**，以文本形式描述数字系统硬件的结构和行为的语言，可以表示逻辑电路图、逻辑表达式，还可以表示数字逻辑系统所完成的逻辑功能。
 Verilog HDL和VHDL是最流行的两种HDL。
 
@@ -67,7 +67,7 @@ Verilog HDL和VHDL是最流行的两种HDL。
 Verilog可以从五个层次对电路（系统）进行描述，包括:系统级、算法级、**寄存器传输级（即RTL级）**、门级、开关级。我们平时用的最多的为RTL级，故<font color=Red>**Verilog代码也经常被称为RTL代码**</font>。
 
 ****
-# 5.Verilog和C的区别
+# 5.Verilog和C的区别<a id="p5"></a>
 
 **Verilog 是硬件描述语言**，在编译下载到 FPGA 之后，FPGA 会生成电路，所以 **Verilog 全部是并行处理与运行的**；**C 语言是软件语言**，编译下载到单片机/CPU 之后，还是软件指令，而单片机/CPU 处理软件指令需要取址、译码、执行，是**串行执行**的。
 
