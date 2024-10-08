@@ -31,19 +31,19 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 
 &emsp;&emsp;对于整体结构在本小节仅做了解，在本文做完各组件介绍后会对整体结构进一步分析。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/3011b98e6e6b451189efd1350e5a84ca.png" /> </div>
+<div align="center"> <img src="./images/2/SLICEM.jpg" /> </div>
 
 ---
 # 3.LUT
 &emsp;&emsp;**查找表（Look Up Table, LUT）**，FPGA以LUT代替门电路，任意一个 **6位输入1位输出（6IN-1OUT）** 的门电路，都可以用LUT6来表示。<font color=red>**LUT6本质是64*1的ROM（Read Only Memory）**</font>，深度为64，位宽为1，将6位输入当做6位地址线，则输出就是当前地址存储位。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/2ac0ef9e479f48f99073c5270bf4f198.jpeg" /> </div>
+<div align="center"> <img src="./images/2/LUT6.jpg" /> </div>
 
 &emsp;&emsp;**LUT6本质由2个LUT5（5IN-1OUT）组成**，首先两个LUT5分别对I[4:0]指定真值表，此时对于l[4:0]会分别有2位输出，这2位输出再经过由I5控制的选择器（MUX）输出为O6，即可实现LUT6。此时O5会输出上方LUT5的结果，但一般只在LUT6用作5位输入2位输出时使用。
 
 &emsp;&emsp;**LUT6可以用作5位输入2位输出（5IN-2OUT）**，使用此功能时I5将强制置1，使O6的输出为下方LUT5的输出。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/27fd81ed3da141239480b34381181496.png" height=350 /> </div>
+<div align="center"> <img src="./images/2/LUT5_2.jpg" height=350 /> </div>
 
 在实际情况中：
 * ==输出是1位，并且输入小于等于6位时==，仅需**无视高位填LUT6真值表**，再写入LUT6即可
@@ -53,14 +53,14 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 # 4.DRAM
 下图中，左侧为SLICEM，右侧为SLICEL，二者仅红框部分，也就是LUT6部分不同。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/1dce4fcd98af469399b50afbceb36bcc.jpeg" /> </div>
+<div align="center"> <img src="./images/2/SLICEM_L.jpg" /> </div>
 
 对比SLICEM和SLICEL的LUT6，其异同点如下：
 
 * 相同点：都具有地址输入线（A1-A6），2个输入口（O5-O6）
 * 不同点：SLICEM的LUT6具有写地址输入线（WA1-WA8），写数据端（DI1-DI2），写使能端（WE）
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/1abf51f9c12040539a8ed41177f5e0b0.jpeg" height=300 /> </div>
+<div align="center"> <img src="./images/2/SLICE_LUT6.jpg" height=300 /> </div>
 
 因为SLICEM的LUT6具有写存储功能，因此LUT6可以作RAM使用，1个SLICEM中有4个LUT6，**可以组合为多种DRAM（Distributed RAM，分布式随机存储器）**：
 * 32x1或64x1的单端口DRAM，1个LUT6
@@ -77,32 +77,32 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 ### 单端口DRAM
 &emsp;&emsp;同步读，同步写，DI1数据输入，A[5:0]指定地址，WE置高写数据，WE置低读数据
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/461b08462dd74ac9832ac5f057174133.jpeg" /> </div>
+<div align="center"> <img src="./images/2/单端口DRAM.jpg" /> </div>
 
 ### 双端口DRAM
 &emsp;&emsp;一个端口可同步写（通过A[5:0]指定两个LUT6的地址同时写入）、异步读，另一个端口只能异步读。上方LUT6通过A[5:0]指定读取地址，下方LUT6通过DPRA[5:0]指定读取地址。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/a054bb9e31e2484baa95e9fa7dfe65c7.jpeg"  /> </div>
+<div align="center"> <img src="./images/2/双端口DRAM.jpg"  /> </div>
 
 ### 简单双端口DRAM
 &emsp;&emsp;一个端口WADDR[6:1]只可同步写，另一端口RADDR[6:1]只可异步读。64x3简单双端口DRAM（左图）可以存储64个3位数据，DATA[3:1]并行输入，三个O6（O[3:1]）并行输出；32*6可以存储32个6位数据，DATA[6:1]输入，O[6:1]输出。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/0f01d7ea01004183995c3895e5f2b68e.jpeg"  /> </div>
+<div align="center"> <img src="./images/2/简单双端口DRAM.jpg"  /> </div>
 
 ### 四端口DRAM
 &emsp;&emsp;一个端口（ADDRD）可同步读、异步写，其他三个端口（ADDRA、ADDRB、ADDRC）仅可异步读，与双端口类似，四个LUT存相同数据，但每个端口都能各自读不同地址内容（提高并发读取性能）。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/20d79ec658534ec2ad815ce7725d09c5.jpeg"  /> </div>
+<div align="center"> <img src="./images/2/四端口DRAM.jpg"  /> </div>
 
 ### 128x1单端口DRAM
 &emsp;&emsp;由2个64x1单端口DRAM+1个MUX组成。写入时A[6:0]用于指定地址WA[7:1]；读取时A[5:0]用于指定地址，A[6]用于MUX选择控制。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/2440e6b2853c4394aa9743c6a852a824.jpeg"  /> </div>
+<div align="center"> <img src="./images/2/128x1单端口DRAM.jpg"  /> </div>
 
 ### 32位移位寄存器
 &emsp;&emsp;SRLC32E，使用SLICEM的LUT配置为32位移位寄存器。移位寄存器中的数据在脉冲信号作用下依次逐位移动，因此每个LUT可以将串行数据延迟1到32个时钟周期。移位寄存器使用电平转移，即输入是多少V输出就是多少V，因此可能出现亚稳态电平。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/0d07d05cde074a6bbf3c1d75eeb3c57e.jpeg"  /> </div>
+<div align="center"> <img src="./images/2/32位移位寄存器.jpg"  /> </div>
 
 > 移位寄存器较复杂，参考资料：
 > &emsp;&emsp;https://blog.csdn.net/qq_43433724/article/details/137976382
@@ -127,28 +127,28 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 
 移位寄存器时序图
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/6f9a521424fb45a7a03d6450deabab18.png"  /> </div>
+<div align="center"> <img src="./images/2/移位寄存器时序图.jpg"  /> </div>
 
 ---
 # 5.MUX
 &emsp;&emsp;**多路选择器（Multiplexer，MUX）**，如下图为四选一数据选择器（MUX4_1），由2位地址码A[1:0]选择将数据输入D[3:0]的其中一位传送到输出。因为也是6位输入1位输出，所以**MUX4_1本质上也是LUT6**，只不过它有着特定的连线方式
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/dac174793fc44bbea3fdaeb42e4d0bef.png"  /> </div>
+<div align="center"> <img src="./images/2/MUX4_1.jpg"  /> </div>
 
 
 &emsp;&emsp;**MUX8_1由2个LUT6和一个MUXF7组成**，其原理图如下。低2位地址线a[1:0]（黄线和蓝线）分别连接到2两个LUT6的同一位置，高1位a[2]（红线）用于连接MUXF7进行数据选择；8位数据输入d[7:0]分别经过2个LUT6进行4选1，最终由MUXF7进行2选1。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/c7611a0db56f41ee8236e9b8db924bcc.png"  /> </div>
+<div align="center"> <img src="./images/2/MUX8_1.jpg"  /> </div>
 
 
 &emsp;&emsp;**MUX16_1与MUX8_1类似**，先通过4个MUX4_1从16个数据选出4个（低2位地址），再通过2个MUXF7选出2个（次高位地址），最后通过MUXF8进行2选1（最高位地址）。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/98076bf6a8e5456baa1ac13063ced72c.png"  /> </div>
+<div align="center"> <img src="./images/2/MUX16_1.jpg"  /> </div>
 
 
 &emsp;&emsp;MUX16_1中没有使用LUT6进行5次4选1（原：16-4-2-1，5次4选1：16-4-1），下图中，红线是使用5个LUT6进行16选1，绿线是通过4个LUT6+MUX进行16选1。可以看出**红线路径无法保证延迟一致性**，走线越长延迟偏差就越大，容易产生毛刺，造成逻辑错误。这也是MUXF7和MUXF8这样设计（靠近LUT6，且结构对称）的原因，<font color=red>**其本身就是为多路选择器设计的**</font>。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/fdd01a6dd4b341adab07599dfd677a75.png"  /> </div>
+<div align="center"> <img src="./images/2/MUX16不同方案.jpg"  /> </div>
 
 ---
 
@@ -163,7 +163,7 @@ FPGA每个SLICE基本都由**LUT、MUX、进位链、寄存器**组成：
 * O0=S0⊕CIN=A0⊕B0⊕CIN（相当于是全加器的S），它来自LUTA的O5或外面外部输入AX
 * DI0 = A0或者B0（两个加数中的一个，配合S0使用）
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/03859f1f916e4108bd0b98bcab28a7c6.png"  /> </div>
+<div align="center"> <img src="./images/2/进位链.jpg"  /> </div>
 
 
 **MUXCY（下一级进位）原理：**
@@ -187,11 +187,11 @@ endmodule
 
 &emsp;&emsp;因为**1个LUT6只能作为4位全加器使用**，所以会使用到2个LUT6，其内部连线如下。a和b的低4位传到了红框中，结果传入进位链1，第4位进位传到进位链2，并输出低4位运算结果o[3:0]；高4位传到绿框中，结果传入进位链2，最终输出高4位运算结果o[7:4]。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/13fb1f9830ee45059dafbac53721c4db.png"  /> </div>
+<div align="center"> <img src="./images/2/8位加法进位链.jpg"  /> </div>
 
 &emsp;&emsp;进位链级联数有限制，其取决于当前列SLICE的个数（图中绿框部分），且不能跨逻辑区域，逻辑区域里进位链最大级数=逻辑区域内一列的SLICE个数，全加器位宽为SLICE个数x4。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/2eafff75258544ba8c8ea7329cd6c6c7.png"  /> </div>
+<div align="center"> <img src="./images/2/进位链_逻辑区域.jpg"  /> </div>
 
 ---
 # 7.存储单元
@@ -200,7 +200,7 @@ endmodule
 
 **Xilinx7系的存储单元结构主要分两种，如下图存储单元1、2：**
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/8006fbcba8e44b7f9ecf3d693836c7d5.png"  /> </div>
+<div align="center"> <img src="./images/2/存储单元1_2.jpg"  /> </div>
 
 相同点：
 * 有数据输入端D、时钟使能端CE、时钟输入端CK、复位端SR
@@ -208,7 +208,7 @@ endmodule
 * 能通过配置SRHIGH、SRLOW来控制用户复位后的电平（推荐高电平复位，因为无需额外资源消耗，低电平还需要加个LUT做反相，如下图所示）
 * 同一SLICE中，同一类型存储单元的用户复位可以配置为同步或异步复位。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/acab4371472d4da28cb4bdfa45ed5fe2.png"  /> </div>
+<div align="center"> <img src="./images/2/SR对应图.jpg"  /> </div>
 
 ```c
 例1：INIT和SR复位电平的配置
@@ -242,7 +242,7 @@ endmodule
 # 8.SLICE和CLB
 小节2中给出过的SLICEM架构图如下，可以分为相同的4行，SLICEL与之类似，差别仅为LUT6不具备存储功能。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/3011b98e6e6b451189efd1350e5a84ca.png" /> </div>
+<div align="center"> <img src="./images/2/SLICEM.jpg" /> </div>
 
 * **蓝紫框为存储单元1、2**，verilog中每1位reg几乎都会用到1个存储单元。输入取决于单元前的MUX，存储单元1有2种输入方式，存储单元2有6种输入方式。
 * **红框为LUT6**，内部由2个LUT5和1个MUX组成，可以实现6入1出、5入2出、4选1功能。SLICEM中还可以做DRAM、移位寄存器以实现数据读写、移位输出功能。
@@ -253,17 +253,17 @@ endmodule
 SLICE在CLB中的排列：
 &emsp;&emsp;一个CLB有2个SLICE，上一级SLICE进位链输出连接到下一级SLICE进位链输入。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/b373cee75c484bafb6604146d816b0e6.png" /> </div>
+<div align="center"> <img src="./images/2/CLB.jpg" /> </div>
 
 进位之外数据的互联：
 &emsp;&emsp;同一CLB内的SLICE通过CLB内的快速互联单元（橙框）直连，黄框和绿框用于将线连到更远处。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/1ff96d6d196e41cf978421fd33ad9a8b.png" /> </div>
+<div align="center"> <img src="./images/2/CLB数据互联.jpg" /> </div>
 
 ---
 # 9.DSP48E1
 DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容较多，仅作简要总结。DSP48E1的简要架构如下：
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/52f39aa45d794c2ca48e545b608a375d.png" /> </div>
+<div align="center"> <img src="./images/2/DSP48E1简图.jpg" /> </div>
 
 红框之外的部件为寄存器，用于流水线操作，提高性能
 1. 预加器（加法器），实现A（最大位宽30）与D（最大位宽25）的相加，输出结果最大位宽25，不使用时可以旁路掉。
@@ -274,11 +274,11 @@ DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容�
 
 **DSP48E1的内部架构：**
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/d5f1858db88a4e5cbaab1525ae0747ae.png" /> </div>
+<div align="center"> <img src="./images/2/DSP48E1内部架构.jpg" /> </div>
 
 &emsp;&emsp;DSP48E1除了能做1个48位与48位加法/减法/逻辑操作（ONE48），还能被用来做2个24位与24位加法(TWO24)，4个12位与12位加法(FOUR12)
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/4900c11370d24d4b8f30f6c070ce745e.png" /> </div>
+<div align="center"> <img src="./images/2/FOUR12.jpg" /> </div>
 
 **模式探测器**
 
@@ -286,7 +286,7 @@ DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容�
 
 &emsp;&emsp;当DATA与PATTERN相同时，PATTERNDETECT为1，否则为0；当DATA与PATTERN反码相同时，PATTERNBDETECT为1，否则为0。MASK对应DATA每一位，置1时，对应位忽略与PATTERN的比较，当数据位全置1时，PATTERNDETECT用于检测高位（符号拓展位）是否全为0，不是的话产生上溢出（overflow），PATTERNBDETECT用于检测高位是否全为1，不是的话产生下溢出。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/c9fbe2918b8e463a904d6069c3dbe09d.png" /> </div>
+<div align="center"> <img src="./images/2/模式探测器.jpg" /> </div>
 
 ---
 # 10.BRAM
@@ -296,14 +296,14 @@ DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容�
 
 &emsp;&emsp;在读操作时，==**DRAM是组合逻辑直接输出，而BRAM是时序逻辑输出**==，所以送地址进DRAM时不需要时钟，BRAM输入地址需要过寄存器，也就是需要时钟才能输出。此外BRAM输出内嵌一个寄存器，打拍输出时可以使用它，以节省SLICE上寄存器资源。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/5e75e3f7bf694f6aa4986c1d51e8c6a0.png" /> </div>
+<div align="center"> <img src="./images/2/BRAM.jpg" /> </div>
 
 
 **BRAM的三种模式**
 
 **1.WRITE_FIRST（写优先）**，时序图：
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/74df002f039e49538d64ad78191f65a6.png" /> </div>
+<div align="center"> <img src="./images/2/BRAM写优先时序图.jpg" /> </div>
 
 进行读操作时（红线前，WE=0），CLK上升沿后将地址aa的数据MEM(aa)打到DO；进行写操作时（红线后，WE=1），CLK上升沿后，DI的数据存入地址bb，同时写入数据1111被直接打到DO，之后的写入同理。
 
@@ -311,11 +311,11 @@ DSP48E1可以用于进行多种逻辑、算术的单独、组合运算，内容�
 
 进行读操作时（红线前，WE=0），CLK上升沿后将MEM(aa)打到DO。写操作时（红线后，WE=1），将1111写到地址bb处，并将bb处原数据old MEM(bb)打到DO。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/73ccffab44ff4031a5d3e94374d8553f.png" /> </div>
+<div align="center"> <img src="./images/2/BRAM读优先时序图.jpg" /> </div>
 
 
 **3.NO_CHANGE**，时序图：
 
 数据读写与前两个模式相似，但DO输出的内容仅在WE=0（读操作），CLK上升沿时更换为ADDR对应地址的数据。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/0801d7000ee345dea77a4f08b9f39009.png" /> </div>
+<div align="center"> <img src="./images/2/BRAM无变化时序图.jpg" /> </div>
