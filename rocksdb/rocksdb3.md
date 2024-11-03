@@ -3,12 +3,17 @@
 本文章同步到我的笔记：[https://github.com/HentaiYang/NoteBooks](https://github.com/HentaiYang/NoteBooks)
 
 ## 目录
-* [一、写流程简介](#p1)
-* [二、写流程源码解析](#p2)
+* [1.写流程简介](#p1)
+* [2.写流程源码解析](#p2)
+* &nbsp;&nbsp;[2.1.Put()](#p21)
+* &nbsp;&nbsp;[2.2.WriteImpl()](#22)
+* &nbsp;&nbsp;&nbsp;&nbsp;[2.2.1.JoinBatchGroup()](#221)
+* &nbsp;&nbsp;&nbsp;&nbsp;[2.2.2.EnterAsBatchGroupLeader()](#222)
+* &nbsp;&nbsp;&nbsp;&nbsp;[2.2.3.ExitAsBatchGroupLeader()](#223)
 
 ---
 
-# 一、写流程简介<a id="p1"></a>
+# 1.写流程简介<a id="p1"></a>
 
 写流程和之前笔记中给出的一样，先写WAL，再写Memtable：
 
@@ -27,9 +32,9 @@ Rocksdb的写是分批次（batch）写，将多个写入放入一个batch，从
 
 <div align="center"> <img src="./images/3/4.jpg"  /> </div>
 
-# 二、写流程源码解析<a id="p2"></a>
-
-接口：
+# 2.写流程源码解析<a id="p2"></a>
+## 2.1.Put()<a id="p21"></a>
+写操作的接口为Put，其有四个实现：
 
 ```cpp
 // 四个接口，分为带时间戳ts和不带的、直接用默认列族和指定列族的
@@ -99,6 +104,9 @@ Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch) {
   return s;
 }
 ```
+
+## 2.2.WriteImpl()<a id="p22"></a>
+
 WriteImpl方法首先将leader writer和其他Writer（Follower）分流，通过JoinBatchGroup休眠Follower，leader会办以下事情：
 
 	唤醒writers_中之前没被唤醒的任务，在本batch中一并执行
@@ -305,6 +313,7 @@ size_t seq_inc = seq_per_batch_ ? valid_batches : total_count;
 }
 ```
 
+### 2.2.1.JoinBatchGroup()<a id="p221"></a>
 JoinBatchGroup会先将Writer放到双向链表尾部，然后设置Leader状态，不是Leader则进入AwaitState等待。
 
 其中LinkOne为插入链表方法，如果出现Write Stall则会休眠等待唤醒。
@@ -346,6 +355,7 @@ if (newest_writer->compare_exchange_weak(writers, w)) {
 }
 ```
 
+### 2.2.2.EnterAsBatchGroupLeader()<a id="p222"></a>
 Leader通过EnterAsBatchGroupLeader完成group成员确定：group大小、writer个数和连接、last_writer_位置。
 
 ```cpp
@@ -405,6 +415,7 @@ void WriteThread::CreateMissingNewerLinks(Writer* head) {
 }
 ```
 
+### 2.2.3.ExitAsBatchGroupLeader()<a id="p223"></a>
 Leader的收尾工作在ExitAsBatchGroupLeader中实现，包括加入新的Writer、断开当前Group与新Writer连接、确定新Leader、唤醒当前Group其他Writer。
 
 ```cpp
