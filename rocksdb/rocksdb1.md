@@ -4,20 +4,20 @@
 
 本文章同步到我的笔记：[https://github.com/HentaiYang/NoteBooks](https://github.com/HentaiYang/NoteBooks)
 ## 目录
-* [一、RocksDB介绍](#p1)
-* [二、RocksDB的获取和简单使用](#p2)
-* [三、RocksDB执行流程](#p3)
-* [四、WAL](#p4)
-* [五、MANIFEST](#p5)
-* [六、MemTable](#p6)
-* [七、SkipList](#p7)
+* [1.RocksDB介绍](#p1)
+* [2.RocksDB的获取和简单使用](#p2)
+* [3.RocksDB执行流程](#p3)
+* [4.WAL](#p4)
+* [5.MANIFEST](#p5)
+* [6.MemTable](#p6)
+* [7.SkipList](#p7)
 
 ---
-# 一、RocksDB介绍<a id="p1"></a>
+# 1.RocksDB介绍<a id="p1"></a>
 Rocksdb 是基于Google LevelDB研发的高性能kv持久化存储引擎，以库组件形式嵌入程序中，为大规模分布式应用在ssd上运行提供优化。RocksDB不提供高层级的操作，例如备份、负载均衡、快照等，而是选择提供工具支持将实现交给上层应用。正是这种高度可定制化能力，允许RocksDB对广泛的需求和工作负载场景进行定制。（随便搬来的，想着至少应该有个简单介绍）
 
 ---
-# 二、RocksDB的获取和简单使用<a id="p2"></a>
+# 2.RocksDB的获取和简单使用<a id="p2"></a>
 
 想了半天发现还是先把rocksdb跑起来是最好的，那么首先是rocksdb的获取方式：
 
@@ -44,7 +44,7 @@ clone完成后，可以将Makefile中**WARNING_FLAGS += -Werror**一行注释掉
 	add_custom_target(build_rocksdb
 	COMMAD make -j4 shared_lib -C ${ROCKSDB_SOURCE_DIR}
 	COMMENT “Building RocksDB”
-	}
+    )
 	
 	添加依赖
 	ADD_DEPENDENCIES(main_target build_rocksdb)
@@ -282,7 +282,7 @@ data目录中会出现如下数据，记得执行一段时间后ctrl+c停止程�
 这样就完成了rocksdb的基本使用、编译和执行，接下来会对rocksdb的执行流程、基本概念和刚刚生成的文件进行分析。
 
 ---
-# 三、RocksDB执行流程<a id="p3"></a>
+# 3.RocksDB执行流程<a id="p3"></a>
 
 **RocksDB的执行流程如下：**
 
@@ -295,7 +295,7 @@ sst文件的存放结构为LSM Tree，请自行查询概念，因为L0允许Key�
 <div align="center"> <img src="./images/1/5.jpg"  /> </div>
 
 ---
-# 四、WAL<a id="p4"></a>
+# 4.WAL<a id="p4"></a>
 Write Ahead Log，数据写入前会先写入到log中，提供数据持久性和故障恢复能力，其具备如下优点：
 * 持久性：系统崩溃或断电时，未落盘数据不会丢失
 * 快速恢复：系统重启时，通过重放WAL中操作，将系统还原到最后一次正常关闭的状态
@@ -330,7 +330,7 @@ Sequence,Count,ByteSize,Physical Offset,Key(s) : value
 ```
 
 ---
-# 五、MANIFEST<a id="p5"></a>
+# 5.MANIFEST<a id="p5"></a>
 描述所有列族中LSM树结构信息的文件，包括每层sst文件数量，每层文件概要信息，用于重建树
 
 文件分析方式：
@@ -364,7 +364,7 @@ Min_log_number_to_keep：2PC模式下使用，恢复中忽略小于等于该值�
 ```
 
 ---
-# 六、Memtable<a id="p6"></a>
+# 6.Memtable<a id="p6"></a>
 写入过程：先写WAL，再写memtable，memtable满或满足一定条件之后变为immemtable待刷新（flush），生成一个新的memtable。
 数据写入memtable视为写入成功，memtable存放在内存中，同时服务于读和写，新的写入总是插入到memtable，一个memtable被写满或满足一定条件后，会变成不可修改的immemtable，并被一个新的memtable替换，一个后台线程会将immemtable落盘（flush）到一个sst文件，之后该immemtable会被销毁。
 
@@ -413,7 +413,7 @@ Memtable插入一条kv的数据格式：
 	Value：字符串，写入的value
 
 ---
-# 七、Skiplist<a id="p7"></a>
+# 7.Skiplist<a id="p7"></a>
 Memtable最常用的实现基于skiplist（跳表），在多数情况下读、写、随机访问及序列化扫描性能较好，且支持并发写入。跳表基础不属于本笔记记录内容，请自行查阅。
 
 <div align="center"> <img src="./images/1/7.jpg"  /> </div>
