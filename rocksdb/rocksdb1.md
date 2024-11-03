@@ -67,11 +67,11 @@ git clone https://github.com/facebook/rocksdb.git
 cp rocksdb rocksdbtools
 ```
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/6ac96d2122494ab28afa08a9d9c53f39.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/1.jpg"  /> </div>
 
 vscode记得配置c_cpp_properties.json，在includePath中添加rocksdb的include目录，这样就可以ctrl+左键快速切换了，如果没有该文件可自行创建或ctrl+shift+p找到c/c++编辑配置来生成这个文件
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/f3c6b4176f734f5c866c6411f510ee45.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/2.jpg"  /> </div>
 
 ```C
 {
@@ -267,7 +267,7 @@ make
 
 执行后命令行会出现如下打印：
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/9bc6225b20304b47973310de9f6a76c2.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/3.jpg"  /> </div>
 
 data目录中会出现如下数据，记得执行一段时间后ctrl+c停止程序运行，避免之后分析时文件过大速度变慢
 
@@ -277,7 +277,7 @@ data目录中会出现如下数据，记得执行一段时间后ctrl+c停止程�
 		Compaction Stats：LSM树状态
 	data/OPTIONS-xxxxxx：最近打开的一次配置
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/0284a1781d434af59244dd63089c98a3.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/4.jpg"  /> </div>
 
 这样就完成了rocksdb的基本使用、编译和执行，接下来会对rocksdb的执行流程、基本概念和刚刚生成的文件进行分析。
 
@@ -292,7 +292,7 @@ data目录中会出现如下数据，记得执行一段时间后ctrl+c停止程�
 
 sst文件的存放结构为LSM Tree，请自行查询概念，因为L0允许Key重叠，所以读取时要查询所有sst文件，从L1往上开始，不同sst之间key范围不重叠，所以可以进行二分查找。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/91ae5a44fadf4c8b9e2f106326883f01.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/5.jpg"  /> </div>
 
 ---
 # 四、WAL<a id="p4"></a>
@@ -368,7 +368,7 @@ Min_log_number_to_keep：2PC模式下使用，恢复中忽略小于等于该值�
 写入过程：先写WAL，再写memtable，memtable满或满足一定条件之后变为immemtable待刷新（flush），生成一个新的memtable。
 数据写入memtable视为写入成功，memtable存放在内存中，同时服务于读和写，新的写入总是插入到memtable，一个memtable被写满或满足一定条件后，会变成不可修改的immemtable，并被一个新的memtable替换，一个后台线程会将immemtable落盘（flush）到一个sst文件，之后该immemtable会被销毁。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/688240d8c97d4b4db47aa17bfedc6287.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/6.jpg"  /> </div>
 
 MemTable源码：
 
@@ -416,7 +416,7 @@ Memtable插入一条kv的数据格式：
 # 七、Skiplist<a id="p7"></a>
 Memtable最常用的实现基于skiplist（跳表），在多数情况下读、写、随机访问及序列化扫描性能较好，且支持并发写入。跳表基础不属于本笔记记录内容，请自行查阅。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/49b4a6e4959648c680b85801e5814b80.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/7.jpg"  /> </div>
 
 ```cpp
 struct Node{
@@ -428,11 +428,11 @@ struct Node{
 
 插入过程：最高节点开始，循环：同高度有下一节点且小于等于key则跳转该节点，否则高度-1。
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/56f634d52f2f475197385b179e995b08.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/8.jpg"  /> </div>
 
 Key插入到跳表中之后如下图所示：
 
-<div align="center"> <img src="https://i-blog.csdnimg.cn/direct/a91bfca14751441c837853734da7eecf.jpeg"  /> </div>
+<div align="center"> <img src="./images/1/9.jpg"  /> </div>
 
 源码：
 
