@@ -3,14 +3,14 @@
 本文章同步到我的笔记：[https://github.com/HentaiYang/NoteBooks](https://github.com/HentaiYang/NoteBooks)
 
 ## 目录
-* [一、SST](#p1)
-* [二、列族](#p2)
-* [三、Version](#p3)
-* [四、Bloom Filter](#p4)
+* [1.SST](#p1)
+* [2.列族](#p2)
+* [3.Version](#p3)
+* [4.Bloom Filter](#p4)
 
 ---
 
-# 一、SST<a id="p1"></a>
+# 1.SST<a id="p1"></a>
 
 SST（Sorted String Table），通过flush和compaction生成，SST内Key是
 有序的，Key和Value都是任意长度的字符串。L0的各个SST的Key范围可以重叠，L1及以上的SST之间是严格有序的，下一个SST的最小Key必定大于上一个SST的最大Key。因为Flush操作不会做合并，所以L0的SST之间不会保持有序。
@@ -135,7 +135,7 @@ Data Block Summary:	// data block 概要（在最后）
 ```
 
 ---
-# 二、列族<a id="p2"></a>
+# 2.列族<a id="p2"></a>
 将数据库的数据进行逻辑划分，弥补了rocksdb单个进程只能操作一个数据库的问题，每个列族有自己的LSM结构，共享WAL，不共享memtable、immemtable、SST。默认只有一个列族，名称default。类似数据库“表”的概念。
 
 配置分为ColumnFamilyOptions和DBOptions，前者是单个列族的配置，后者是整个DB的配置。
@@ -188,7 +188,7 @@ class MemTableListVersion {
 ```
 
 ---
-# 三、Version管理<a id="p3"></a>
+# 3.Version管理<a id="p3"></a>
 管理某一个时刻的db状态，任何读写都是对一个version的操作。
 
 当compaction结束或immemtable被flush到磁盘时，会创建一个新的version。在任何时刻rocksdb中只会有一个current version，Get查询操作或迭代器都会使用current version。没有被任何Get或迭代器使用的“过时”version会被清除，没有被任何version使用的SST文件则会被删除。
@@ -273,7 +273,7 @@ struct SuperVersion {
 
 ---
 
-# 四、Bloom Filter<a id="p4"></a>
+# 4.Bloom Filter<a id="p4"></a>
 布隆过滤器（bloom filter）用于判断一个元素肯定不在一个集合中，或者可能在一个集合中。用来判断一个key是否在memtable或SST文件内，提高读效率。一个布隆过滤器返回的结果：
 
 	某个元素可能在集合中
