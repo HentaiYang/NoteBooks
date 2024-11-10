@@ -38,13 +38,13 @@ Vitis HLS（原Vivado HLS）是一个高级综合工具，即可以用C/C++高�
 
 对于任意精度类型使用sizeof()时，其结果会对其到1、2、4等字节：
 
-<div align="center"><img src="./images/3/1.jpg"></div>
+<div><img src="./images/3/1.jpg"></div>
 
 在例如VScode等IDE中显示类型或包含头文件报错时，可以在.vscode\c_cpp_properties.json中添加Vitis HLS的include目录：
 
 	安装根目录\Vivado_HLS(Vitis_HLS)\版本号\include
 
-<div align="center"><img src="./images/3/2.jpg"></div>
+<div><img src="./images/3/2.jpg"></div>
 
 ---
 
@@ -141,26 +141,26 @@ Vitis HLS中支持结构体和枚举类型。
 
 Vitis HLS中和C/C++一样，可以声明结构体类型，并且可以使用任意精度类型声明成员：
 
-<div align="center"><img src="./images/3/3.jpg"></div>
+<div><img src="./images/3/3.jpg"></div>
 
 对于实例化的结构体对象，可以使用DATA_PACK约束（directive）来指定结构体内部数据结构
 
-<div align="center"><img src="./images/3/4.jpg"></div>
+<div><img src="./images/3/4.jpg"></div>
 
 
 field_level会将结构体所有成员位宽分别对齐到1字节，然后在内存中依次放置：
 
-<div align="center"><img src="./images/3/5.jpg"></div>
+<div><img src="./images/3/5.jpg"></div>
 
 
 struct_level则会保留每个成员的实际位宽，在内存中紧靠着放，最后向上对其1字节，如下图中，各个成员的位宽相加为19，因此对其到3字节：
-<div align="center"><img src="./images/3/6.jpg"></div>
+<div><img src="./images/3/6.jpg"></div>
 
 ---
 ### 2.2.2.枚举<a id="p222"></a>
 枚举类型占用位宽会自动分配，如下图mymode_t共4个枚举数据，因此位宽为2，其余和C/C++的枚举相同，不再赘述。
 
-<div align="center"><img src="./images/3/7.jpg"></div>
+<div><img src="./images/3/7.jpg"></div>
 
 ---
 # 3.基本运算<a id="p3"></a>
