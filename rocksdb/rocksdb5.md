@@ -34,7 +34,7 @@
 # 1.Flush<a id="p1"></a>
 Flush是将内存中的immemtable list数据合并，生成SST文件落盘。
 
-<div align="center"> <img src="./images/5/1.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/5/1.jpg"></div>
 
 PreprocessWrite用于：
 
@@ -43,7 +43,7 @@ PreprocessWrite用于：
 	
 三者会生成或调度Flush请求，存在flush_queue_中，由MaybeScheduleFlushOrCompaction()进行调度，Flush请求调度到BGWorkFlush->后面如图：
 
-<div align="center"> <img src="./images/5/2.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/5/2.jpg"></div>
 
 Flush流程关键配置：
 

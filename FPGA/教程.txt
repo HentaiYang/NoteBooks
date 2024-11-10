@@ -1,7 +1,0 @@
-Vitis HLS：
-	https://blog.csdn.net/weixin_44007264?type=blog  基础
-	https://blog.csdn.net/kzz6991?type=blog  算法/小系统
-
-FPGA：
-	https://blog.csdn.net/suiyaopu8894?type=blog  基础
-	ug768  原语

@@ -40,7 +40,8 @@ void func(dx_t xin[N], dx_t a, db_t b, db_t c, do_t yo[N])
     }
 }
 ```
-
+```
+```
 从本篇开始，top函数更改为通用的func，这样只改其中的逻辑和参数就行，记得第一次运行要在设置中更改Top函数，更改方式请参考上一篇笔记。
 
 从程序代码出发，对loop标签下的for循环进行分析，可以得到其全过程时序如下，其中每个属性的含义：
@@ -57,7 +58,7 @@ void func(dx_t xin[N], dx_t a, db_t b, db_t c, do_t yo[N])
 		1.如果函数执行结束到下一轮该函数执行之间有操作的话，这一时间会增加
 		2.如果对循环和函数进行优化，函数可能并发执行（多个函数实例，间隔为0）、流水线执行（间隔减小）
 
-<div><img src="./images/5/1.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/1.jpg"></div>
 
 ---
 
@@ -76,18 +77,18 @@ loop:
 
 添加PIPELINE后，第一节提到的Loop Iteration Interval (Loop II)循环迭代间隔就变为了1，因为3次循环间没有数据依赖，所以间隔为一个cycle，循环耗时从9减少到5：
 
-<div><img src="./images/5/2.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/2.jpg"></div>
 
 ---
 
-## 2.2.UNROLL<a id="p22"></a>
+## 2.2.UNROLL<a id="p22"></a>     
 UNROLL会将循环全部展开，如循环次数为3，则将原本1组电路进行3次运算更改为3组电路分别进行1次计算，通过消耗N倍资源换取N倍效率，其添加方法与PIPELINE相同：
 
 ```cpp
 #pragma HLS UNROLL
 ```
 
-<div><img src="./images/5/3.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/3.jpg"></div>
 
 有时，循环的次数实在过多，全部展开会用光板子的资源，那么我们可以将其部分展开，使用UNROLL的参数factor进行配置，如factor=3时，会将循环展开为3组电路，消耗3倍资源换取3倍效率：
 
@@ -101,7 +102,7 @@ UNROLL会将循环全部展开，如循环次数为3，则将原本1组电路进
 # 3.LOOP_MERGE<a id="p3"></a>
 考虑如下图中的情况，add循环和sub循环都用到了a[i]和b[i]，并且循环上限都为N，从硬件设计的角度上讲，这两个循环完全可以合并，如右图中的逻辑：
 
-<div><img src="./images/5/4.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/4.jpg"></div>
 
 在这里我们引入loop region的概念，它实际上就是对一段大括号括起的代码块声明的标签，在这里用作LOOP_MERGE的作用域。
 
@@ -132,23 +133,23 @@ void func(data_t a[N], data_t b[N], data_t c[N], data_t d[N])
 
 如果两个循环的边界不同，如下图：
 
-<div><img src="./images/5/5.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/5.jpg"></div>
 
 合并时将根据更大的循环决定循环次数，这没有问题，较少的那个循环之后就不会获取这个循环模块的sub输出了。
 
-<div><img src="./images/5/6.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/6.jpg"></div>
 
 需要注意的是，如果两个（或多个）循环的循环上限有常量也有变量，那么LOOP_MERGE会报错：
 
-<div><img src="./images/5/7.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/7.jpg"></div>
 
 而如果循环上限有2个及以上的变量，那么即便变量的范围相同，LOOP_MERGE也会报错：
 
-<div><img src="./images/5/8.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/8.jpg"></div>
 
 如何避免这样的问题？如果编程者可以通过设计，预先确定多个变量中哪个变量最小，那么就可以LOOP_MERGE最小变量次数的循环，然后在loop region外执行剩余的循环，如下是能确定K<=J的情况：
 
-<div><img src="./images/5/9.jpg"></div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/5/9.jpg"></div>
 
 ---
 

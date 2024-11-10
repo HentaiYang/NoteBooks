@@ -29,7 +29,7 @@
 # 1.读流程简介<a id="p1"></a>
 按顺序读memtable、immemtable、sst，任何一个地方读到就返回。读sst文件时，L0层需要遍历所有sst文件，L1开始就采用二分方法读。
 
-<div align="center"> <img src="./images/4/1.jpg"  /> 
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/4/1.jpg"></div> 
 
 # 2.读流程源码解析<a id="p2"></a>
 

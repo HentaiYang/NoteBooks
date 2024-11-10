@@ -28,7 +28,7 @@
 SST（Sorted String Table），通过flush和compaction生成，SST内Key是
 有序的，Key和Value都是任意长度的字符串。L0的各个SST的Key范围可以重叠，L1及以上的SST之间是严格有序的，下一个SST的最小Key必定大于上一个SST的最大Key。因为Flush操作不会做合并，所以L0的SST之间不会保持有序。
 
-<div align="center"> <img src="./images/2/1.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/2/1.jpg"></div>
 
 
 SST结构：
@@ -42,7 +42,7 @@ SST结构：
 	Properties block：属性元数据块
 	Range deletion block：范围删除元数据块，可以快速确定key是否被删除
 	
-<div align="center"> <img src="./images/2/2.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/2/2.jpg"></div>
 
 **sst分析工具：sst_dump**
 
@@ -158,7 +158,7 @@ Data Block Summary:	// data block 概要（在最后）
 	Version：管理版本的所有sst文件
 	SuperVersion：存储Verion、Memtable和MemtableListVersion，比起Version多管理了内存中的数据
 
-<div align="center"> <img src="./images/2/3.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/2/3.jpg"></div>
 
 
 源码：
@@ -206,7 +206,7 @@ class MemTableListVersion {
 
 当compaction结束或immemtable被flush到磁盘时，会创建一个新的version。在任何时刻rocksdb中只会有一个current version，Get查询操作或迭代器都会使用current version。没有被任何Get或迭代器使用的“过时”version会被清除，没有被任何version使用的SST文件则会被删除。
 
-<div align="center"> <img src="./images/2/4.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/2/4.jpg"></div>
 
 举例：
 ```
@@ -297,7 +297,7 @@ struct SuperVersion {
 
 增加布隆过滤器长度，可以减少读放大的问题（误判率更低）。
 
-<div align="center"> <img src="./images/2/5.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/2/5.jpg"></div>
 
 源码：
 

@@ -17,7 +17,8 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 # 2.制导语句和约束<a id="p2"></a>
 **制导语句（directives、指导语句）**，依赖于源程序，开发中会在源程序中加入一些类似于注释的语句，称为制导语句。特别的在C语言中，可以使用 <font color=Red>**#pragma**</font> 来标记制导语句。常见的标准为OpenMP，较新的还有OpenACC、OpenHMPP。
 
-![在这里插入图片描述](./images/1/FPGA_1_1.jpg)
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/1/1.jpg"></div>
+
 
 
 <font color=Red>**在适合并行的地方加入制导语句，可以提高计算设备的效能比**</font>。
@@ -38,7 +39,7 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 	  TLM模型在各组件之间建立一个专用通道，让信息只在这个通道里流动，
 	  因此避免了全局变量，public成员变量和config机制通讯时带来的不便
 
-![在这里插入图片描述](./images/1/FPGA_1_2.jpg)
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/1/2.jpg"></div>
 
 &emsp;&emsp;[图源-SystemC简介](https://blog.csdn.net/gsjthxy/article/details/126099348)
 
@@ -51,7 +52,7 @@ Vitis HLS支持将C、C++和OpenCL函数硬连线到器件逻辑互连结构和R
 * **SystemC module**：用于将建模对象模块化、层次化；
 * **SystemC channel/interface/port/export**：用于实现模块间通信
 
-![在这里插入图片描述](./images/1/FPGA_1_3.jpg)
+<div><img height=350 src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/1/3.jpg"></div>
 
 &emsp;&emsp;[图源-SystemC简介](https://blog.csdn.net/gsjthxy/article/details/126099348)
 

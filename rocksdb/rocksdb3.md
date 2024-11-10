@@ -30,20 +30,20 @@
 
 写流程和之前笔记中给出的一样，先写WAL，再写Memtable：
 
-<div align="center"> <img src="./images/3/1.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/3/1.jpg"></div>
 
 Rocksdb的写是分批次（batch）写，将多个写入放入一个batch，从batch中选出一个leader，其他则为follower，由leader负责这一batch的写入，并在写完后唤醒所有follower。
 
-<div align="center"> <img src="./images/3/2.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/3/2.jpg"></div>
 
 
 一个WriteBatch被封装为一个WriteThread::Write，Write Group由双向链表组成（Leader和Follower），Write Group或Writer之间为单向链表，link_older由链表后方往leader方向，link_newer由leader指向链表后方。
 
-<div align="center"> <img src="./images/3/3.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/3/3.jpg"></div>
 
 当前Group写入后，将后面的Writer组建Group，并参与写入。
 
-<div align="center"> <img src="./images/3/4.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/3/4.jpg"></div>
 
 # 2.写流程源码解析<a id="p2"></a>
 ## 2.1.Put()<a id="p21"></a>

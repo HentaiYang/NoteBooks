@@ -38,11 +38,11 @@ Rocksdb采用追加写方式，对一个key执行插入/删除操作后，该key
 
 rocksdb的默认compaction策略是Leveled Compaction，涉及数据合并、sst文件生成和删除、版本管理、sst文件选举方式、层级大小计算等，如下图为2个Compaction任务：
 
-<div align="center"> <img src="./images/6/1.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/6/1.jpg"></div>
 
 compaction结束后：
 
-<div align="center"> <img src="./images/6/2.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/6/2.jpg"></div>
 
 
 Compaction的触发接口包括手动触发和自动触发：
@@ -50,7 +50,7 @@ Compaction的触发接口包括手动触发和自动触发：
 	手动触发：CompactRange
 	自动触发：MaybeScheduleFlushOrCompaction
 
-<div align="center"> <img src="./images/6/3.jpg"  /> </div>
+<div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/rocksdb/6/3.jpg"></div>
 
 本文的后半部分将会对Compaction的手动触发和自动触发流程进行介绍，具体执行的Compaction操作会放在下一篇文章中。
 
