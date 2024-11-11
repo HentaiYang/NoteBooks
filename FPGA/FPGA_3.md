@@ -1,4 +1,20 @@
 本笔记根据笔者目前的项目确定学习目标，目前主要集中在Vitis HLS上，使用的Vitis HLS版本为2022.2，在windows11下运行，仿真part为xcku15p_CIV-ffva1156-2LV-e，从这一篇开始是HLS的学习进度，主要根据教程：[跟Xilinx SAE 学HLS系列视频讲座-高亚军](https://www.bilibili.com/video/BV1bt41187RW)进行学习，并结合部分学习中查找的其他资料整理而成。
+
+---
+
+**学习笔记：《FPGA学习笔记》索引**
+[FPGA学习笔记#1 HLS简介及相关概念](https://blog.csdn.net/qq_38876396/article/details/142599792)
+[FPGA学习笔记#2 基本组件——CLB、SLICE、LUT、MUX、进位链、DRAM、存储单元、BRAM](https://blog.csdn.net/qq_38876396/article/details/142761068)
+[FPGA学习笔记#3 Vitis HLS编程规范、数据类型、基本运算](https://blog.csdn.net/qq_38876396/article/details/143643677)
+[FPGA学习笔记#4 Vitis HLS 入门的第一个工程](https://blog.csdn.net/qq_38876396/article/details/143645004)
+[FPGA学习笔记#5 Vitis HLS For循环的优化（1）](https://blog.csdn.net/qq_38876396/article/details/143662692)
+[FPGA学习笔记#6 Vitis HLS For循环的优化（2）](https://blog.csdn.net/qq_38876396/article/details/143662824)
+[FPGA学习笔记#7 Vitis HLS 数组优化和函数优化](https://blog.csdn.net/qq_38876396/article/details/143673251)
+[FPGA学习笔记#8 Vitis HLS优化总结和案例程序的优化](https://blog.csdn.net/qq_38876396/article/details/143683331)
+
+---
+
+
 ## 目录
 * [1.Vitis HLS编程规范](#p1)
 * [2.Vitis HLS数据类型](#p2)

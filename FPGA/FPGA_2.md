@@ -1,4 +1,19 @@
 ==看前提醒：作者入门尚浅，本文基本是找到的教程的简略版笔记，本文主要为学习[作者：Jasper兰](https://blog.csdn.net/suiyaopu8894?type=blog)的FPGA教程系列，并结合部分学习中查找的其他资料整理而成。==
+
+---
+
+**学习笔记：《FPGA学习笔记》索引**
+[FPGA学习笔记#1 HLS简介及相关概念](https://blog.csdn.net/qq_38876396/article/details/142599792)
+[FPGA学习笔记#2 基本组件——CLB、SLICE、LUT、MUX、进位链、DRAM、存储单元、BRAM](https://blog.csdn.net/qq_38876396/article/details/142761068)
+[FPGA学习笔记#3 Vitis HLS编程规范、数据类型、基本运算](https://blog.csdn.net/qq_38876396/article/details/143643677)
+[FPGA学习笔记#4 Vitis HLS 入门的第一个工程](https://blog.csdn.net/qq_38876396/article/details/143645004)
+[FPGA学习笔记#5 Vitis HLS For循环的优化（1）](https://blog.csdn.net/qq_38876396/article/details/143662692)
+[FPGA学习笔记#6 Vitis HLS For循环的优化（2）](https://blog.csdn.net/qq_38876396/article/details/143662824)
+[FPGA学习笔记#7 Vitis HLS 数组优化和函数优化](https://blog.csdn.net/qq_38876396/article/details/143673251)
+[FPGA学习笔记#8 Vitis HLS优化总结和案例程序的优化](https://blog.csdn.net/qq_38876396/article/details/143683331)
+
+---
+
 ## 目录
 * [1.可配置逻辑块](#p1)
 * [2.SLICE组成简介](#p2)
