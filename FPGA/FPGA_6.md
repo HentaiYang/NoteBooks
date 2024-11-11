@@ -1,5 +1,5 @@
-
 本笔记使用的Vitis HLS版本为2022.2，在windows11下运行，仿真part为xcku15p_CIV-ffva1156-2LV-e，主要根据教程：[跟Xilinx SAE 学HLS系列视频讲座-高亚军](https://www.bilibili.com/video/BV1bt41187RW)进行学习
+
 ## 目录
 * [1.循环优化中的基本参数](#p1)
 * [2.PIPELINE & UNROLL](#p2)
