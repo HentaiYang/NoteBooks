@@ -1088,3 +1088,11 @@ BitmapAllocator定义的公共接口如下表所示：
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241120173919.png)
 
 因为BlueStore将不同类型的数据严格区分并允许用不同设备存储，所以一个BlueStore实例中可能存在多个BitmapAllocator实例。
+
+---
+
+# 5.BlueFS
+
+## 5.1.RocksDB与BlueFS
+
+2011年诞生的LevelDB基于Google的BitTable数据库系统发展而来，是键值对类型的日志型非关系数据库，为存储海量键值对设计。理论上LevelDB的键和值只收存储容量限制
