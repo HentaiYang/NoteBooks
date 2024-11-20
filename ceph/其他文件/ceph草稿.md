@@ -815,5 +815,193 @@ Y.FD2
 
 ## 2.2.对象
 
+### 2.2.1.逻辑段
+
 Bluestore中的对象非常类似于文件，每个对象都有BlueStore实例内唯一的编号、独立大小、从0开始逻辑编址、支持扩展属性等，对象的**组织形式**也类似文件，**基于逻辑段（extent）**进行的。
+
+每个extent都可以写成{offset, length, data}的三元组形式：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119101321.png)
+
+data用于从磁盘上索引对应逻辑段的数据。磁盘空间碎片化严重时，逻辑上连续的段不一定能分配物理上也连续的空间，所以data主要包含一些物理空间段的集合，每个段对应磁盘的一块独立存储空间，称为bluestore_pextent_t（简称pextent），其成员表如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119101912.png)
+
+pextent与物理设备相关，因此offset和length必须是块大小对齐。如果extent中的offset不是块大小对齐的，对齐约束会使extent的逻辑起始地址和对应物理起始地址产生偏移，同样extent的length不是块大小对齐时，结束地址之间也会产生偏移，这两个偏移会大大增加数据处理难度。
+
+---
+
+### 2.2.2.逻辑段扩展功能
+
+extent是对象内的基本数据管理单元，因此很多扩展功能都基于extent粒度实现：
+
+**（1）数据校验**
+
+计算机组件都可能产生**静默数据错误(Silent Data Corruption)**，顾名思义，就是不能被计算机组件自身察觉的错误，其潜在危害性极大。单个组件静默数据错误出现概率在1e-7左右，极容易被忽略，然而因为每个组件都可能发生，长时间海量数据场景下的**静默数据错误的发生几乎是必然的**。
+
+解决静默数据错误的主要手段是**校验和**，原始数据作为输入得到校验和，将校验和与数据分开存储，读取时分别读取数据与校验和，并重新计算校验和，如果相等则认为数据正确，反之则出错。BlueStore**直接用kvDB保存校验和，ACID特性保证其可靠性**，因此**校验和不一致我们可以断定是原始数据出错**。
+
+良好的检验算法应当有极低的冲突概率（不同输入得到相同输出的概率），并且同一种算法，输出长度越长，冲突概率要低得多。但更低的冲突概率一般对应更复杂的计算过程，我们要**在冲突概率和执行效率之间权衡**。
+
+当前主流的校验算法有**CRC、xxhash**等（BlueStore默认都支持），可以根据配置项灵活选择。
+
+**（2）数据压缩**
+
+数据压缩**将原始数据转换为长度更短的输出**，以节省空间，其过程必然可逆，即**将输出作为输入时可以得到原始数据，称为数据解压缩**。常见的压缩算法大多基于模式匹配，一般其迭代次数决定了压缩收益，因此我们同样需要在**压缩收益和执行效率之间权衡**。
+
+数据压缩有两个关键信息——一是选用的压缩算法，而是压缩后的数据长度。BlueStore用压缩投bluestore_compression_header_t表示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119112534.png)
+
+压缩头和压缩后的数据一起保存，并一起计算压缩收益，即压缩率。当**压缩率小于某个阈值**（目前为0.875，即要求至少压缩掉1/8的数据），此时压缩净收益太小，**BlueStore会拒绝压缩**。
+
+引入数据压缩会影响不完全覆盖写，假定我们要对一个压缩后的extent执行不完全覆盖写，一般而言有两种方案：**一是读出数据、解压缩，然后正常覆盖写**；**二是直接执行重定向写**，即重新分配一个extent，并允许其和原extent有部分重合的内容（因为是不完全覆盖）。**方案一严重影响了写效率**；**方案二即浪费了空间又增加了元数据，影响了读效率**。并且新extent还可以执行压缩，多次不完全覆盖写之后，部分内容可能被多个extent重复保存，进一步浪费空间且降低性能。
+
+目前**BlueStore基于方案二实现数据压缩策略**，但这远非一种完美的压缩策略，所以**默认关闭**。
+
+**（3）数据共享**
+
+指extent在不同对象间的共享，一般由**对象克隆操作**产生共享。某个extent的数据被多个extent共享时，需要**记录共享的起始地址、数据长度和共享次数**，形如**{offset, length, refs}**的三元组，BlueStore称为**bluestore_shared_blob_t**，主要是一张基于extent的引用计数表，其与对象分开**单独存储**。
+
+extent之间还有一种特殊的共享方式——**存储空间共享**。BlueStore可以自定义最小可分配空间，**一般为块大小**，但块大小越大位图越小，索引速度更快，也**可以将其提升为块大小的整数倍**。例如块大小4K、最小可分配空间16K，此时**即便写入1字节，也要分配16K空间**，且**只有一个4K的块被使用**，存在被共享的可能。
+
+---
+
+### 2.2.3.extent数据结构
+
+以上，我们讨论了extent三元组的**data抽象数据**目前期望支持的特性，可以定义其磁盘数据结构为**bluestore_blob_t（简称blob）**，如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119150020.png)
+
+对应的**extent磁盘数据结构**如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119152933.png)
+
+extent除blob之外的成员表示**逻辑段抽象数据，其与物理段（blob）之间的关系**如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119153140.png)
+
+---
+
+### 2.2.4.extent map
+
+一个对象下所有extent组成一个extent map，以索引对象下所有数据，其中的extent可以不连续（前一个的逻辑结束地址要小于后一个的逻辑起始地址），因此**extent map中可能存在空穴**。extent过多或磁盘碎片化都可能导致extent map臃肿，影响kvDB效率，所以要**对过大的extent map分片**，并将信息单独保存，称为shard_info：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119154439.png)
+
+分片编码后的长度不需要很精确，实现中总是基于上一次的分片信息预估当前extent map中每个extent编码后的平均大小，再以此计算分片逻辑地址。因为不是很精确，所以分片可能需要进行多次。
+
+此外，如果某个blob被两个相邻的extent共享，这两个extent又恰好被分片分开，那么将优先对这个blob执行分裂操作，如果分裂失败（如blob被压缩、设置了FLAG_SHARED等），则将该blob加入spanning_blob_map，后续将整个spanning_blob_map和对象的其他元数据（例如onode）一并作为单条记录进行保存。
+
+分片还可以实现对extent的按需加载，读取所需分片并解码还原所有extent到extent map；同样在修改时，也只需更新分片。这样减少了元数据产生，也减少了操作使用的元数据。
+
+综上我们定义extent map的磁盘数据结构如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119165653.png)
+
+至此，我们分析了一个对象的所有关键元素。
+
+---
+
+### 2.2.5.对象数据结构
+
+BlueStore中对象的磁盘数据结构为bluestore_onode_t，简称onode。
+
+BlueStore的对象和上层的对象并不相同。**BlueStore原则上只需要通过一个唯一索引和上层对象建立联系**即可，比如OID，但**随着上层中命名空间、快照等特定信息的追加，影响了OID的全局唯一性**（如快照会使两个对象拥有相同OID，但有不同快照ID），因此**额外信息也需要在上层对象-onode的映射中考虑到**。
+
+BlueStore将对象名转义，并作为**kvDB表的唯一索引**（对象元数据存储在kvDB）。转义过程**一是要尽可能减少转义后的长度，二是要区分对象名的定长和非定长部分**——OID、命名空间等长度不定，哈希、快照ID等为定长整数。转义过程如下：
+
+	1.所有定长整型转为等宽字符串。例如32位哈希0x30313233编码后为"1234"（不能将0x00作为kvDB的默认字符串结束符）。
+	
+	2.所有变长字符串进行转义。将任意小于等于'#'的字符转换为长度固定为3、形如"#XY"的字符串；任意大于等于'~'的字符转换为长度3、"~XY"的字符串；转换后的字符串用'!'作为结束符（'!'小于'#'，因此原始字符串不可能出现'!'字符）。
+	
+	3.拼接1和2得到的字符串。
+
+onode包含四个部分：**数据、扩展属性、omap头部和omap条目**。数据和扩展属性和文件相关概念类似；omap类似扩展属性且无限制，可以和扩展属性有相同key但有不同内容。可以认为**扩展属性用于保存少量小型属性对**，**omap用于保存大量大型属性对**。因此扩展属性和onode一并保存，omap则分开保存，下表为kvDB中需要存储的onode相关条目：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119173456.png)
+
+其中extent map的索引策略考虑了局部性原理——加载onode后，大概率继续加载extent map，因此onode和对应extent map相邻存储可以提升性能。
+
+onode的磁盘数据结构如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119173905.png)
+
+---
+
+# 3.缓存管理
+
+## 3.1.常见的缓存淘汰算法
+
+缓存最重要的问题就是有限的缓存空间被填满后，新的缓存页面该替换哪个页面？这一算法称为缓存淘汰（替换）算法，常见的算法有两种：
+
+**（1）LRU（Least Recently Used）**
+
+LRU算法淘汰最长时间未使用的页面，基于时间局部性。如果请求队列有很好的时间局部特性，则LRU是最优算法。此外LRU也容易实现。
+
+**（2）LFU（Least Frequently Used）**
+
+LFU算法淘汰最低访问频率的页面，基于空间局部性。但很显然的是，访问频率低可能代表页面刚刚加入；访问频率高可能代表页面基本用完。因此LFU算法一般需要兼顾频率的时效性。
+
+**（3）ARC（Adaptive Replacement Cache）**
+
+LRU和LFU算法基于局部性原理，并不通用。基于此诞生了ARC算法，其使用两个队列对缓存页面进行管理：**MRU（Most Recently Used）队列保留最近访问过的页面；MFU（Most Frequently Used）保留最近至少被访问两次的页面**。
+
+ARC算法的**关键在于两个队列长度可变，会根据请求序列的特征自动调整**：时间局部性明显时，MFU队列长度为0，ARC退化为LRU；空间局部性明显时，MRU低劣长度为0，ARC退化为LFU。其**缺点在于维护队列众多**（MRU、MFU及对应的影子队列，共4个）、**执行效率低**，在时延敏感系统——例如数据库系统中并不特别适用。
+
+**（4）2Q**
+
+基于LRU/2（本质是LFU算法）发展而来，是一种针对**数据库**，特别是**关系型数据库系统**优化的淘汰算法。数据库经常存在多个事务操作同一块热点数据的场景，因此算法主要聚焦**多并发事务的数据相关性**。
+
+2Q使用队列A1in、A1out和Am管理缓存，这些队列都是**LRU队列**，**A1in和Am是真正的缓存队列**，**A1out则是影子队列**，保存相关页面的管理结构而不保存真实数据。算法流程如下：
+
+	1.新页面总是先加入A1in，对A1in的命中2Q认为访问相关，不增加热度，页面被淘汰时加入到A1out；
+	
+	2.A1out中某个页面被命中时，2Q认为访问不相关，将其加入Am队列头部提升热度；
+	
+	3.Am队列中页面再次被命中时，同样将其转转移到Am队列头部提升热度；
+	
+	4.Am队列中淘汰的页面也进入A1out。
+
+2Q用A1in队列识别热点数据——如果一个页面在短时间内被连续索引，将被视作相关，这个时间段被称为**“相关索引间隔”（Correlated Reference Period）**，取决于**A1in队列容量**。**A1out的容量**决定了一个页面累计的访问热度能持续多长时间，称为**“热度保留间隔”（Retained Information Period）**。2Q实现中，这**两个容量的调整基于缓存容量自动进行**，其实现极其高效，适合时延敏感的系统。
+
+---
+
+## 3.2.BlueStore中的缓存管理
+
+BlueStore使用了LRU和2Q算法。其中2Q的A1in和Am队列容量配比推荐为1:1，A1out队列容量则推荐为A1in和Am队列容量之和，这样配置较为通用。为减少锁碰撞，BlueStore会实例化多个缓存（不同PG请求可以并发处理，因此OSD会设置多个PG工作队列，缓存实例数与之对应）。
+
+缓存实例都基于Cache基类，然后派生出TwoQCache类和LRUCache类，LRUCache比较简单且可视为TwoQCache的一种特例，故不展开分析。
+
+---
+
+### 3.2.1.Cache类
+
+Cache的基本成员如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119181901.png)
+
+Cache可以缓存用户数据或元数据，而**BlueStore使用2Q作为默认缓存类型**，因此应**尽量用来缓存元数据**（缓存元数据的比重受bluestore_cache_meta_ratio控制，默认为0.9，即90%的cache用来缓存元数据）。
+
+BlueStore大的元数据类型有两种：**Collection和Onode**。**Collection**为PG的内存管理结构，因为体积小巧且数量有限（Ceph推荐每个OSD承载约100个PG）被设计成**常驻内存**。Onode数量庞大，需要有淘汰机制。因此**Cache设计主要面向用户数据和Onode**。
+
+类似其他元数据（如OSDMap），**Onode直接采用LRU队列管理**（所以**2Q只管理数据而不管理元数据**，这有违引入2Q的初衷）。理论上将所有Onode放在单独的LRU队列中效率最高，但每个**Onode唯一归属特定的Collection**，需要一个中间结构建立这一联系，方便Collection级的操作。中间结构称为**OnodeSpace**，其关键数据成员如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119183729.png)
+
+同样的，对**用户数据也要建立和上层管理结构的对应关系**，Onode中Extent是管理用户数据的基本单元，**Blob则执行用户数据到磁盘空间的映射**，因此基于Blob引入中间结构——**BufferSpace**，建立**Blob到缓存的二级索引**，其关键成员如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119184141.png)
+
+BufferSpace管理的基本单元是Buffer，一个**Buffer管理Blob的一段数据**（不一定干净）。其关键成员如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119184308.png)
+
+Buffer的状态转换比较简单，如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119184521.png)
+
+因为Blob是用户数据的基本单位，所以**对缓存的操作一般基于BufferSpace的粒度进行**，BufferSpace中的关键方法如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119184645.png)
 
