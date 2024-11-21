@@ -16,7 +16,7 @@ Ceph基于C++开发，大量采用STL和Boost库中的高级特性。
 
 Ceph整体架构如下：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241111163437.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241120201517.png)
 
 RADOS是ceph的支撑组件，除了ceph当前三大核心应用组件RBD、RGW和CephFS之外（分别对应块、对象和文件访问接口），基于RADOS和其派生librados标准库可以开发任意类型其他组件。
 
@@ -823,7 +823,7 @@ Bluestore中的对象非常类似于文件，每个对象都有BlueStore实例�
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119101321.png)
 
-data用于从磁盘上索引对应逻辑段的数据。磁盘空间碎片化严重时，逻辑上连续的段不一定能分配物理上也连续的空间，所以data主要包含一些物理空间段的集合，每个段对应磁盘的一块独立存储空间，称为bluestore_pextent_t（简称pextent），其成员表如下：
+data用于从磁盘上索引对应逻辑段的数据。磁盘空间碎片化严重时，逻辑上连续的段不一定能分配物理上也连续的空间，所以data主要包含一些物理空间段的集合，每个段对应磁盘的一块独立存储空间，称为**bluestore_pextent_t**（简称pextent），其成员表如下：
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119101912.png)
 
@@ -849,7 +849,7 @@ extent是对象内的基本数据管理单元，因此很多扩展功能都基�
 
 数据压缩**将原始数据转换为长度更短的输出**，以节省空间，其过程必然可逆，即**将输出作为输入时可以得到原始数据，称为数据解压缩**。常见的压缩算法大多基于模式匹配，一般其迭代次数决定了压缩收益，因此我们同样需要在**压缩收益和执行效率之间权衡**。
 
-数据压缩有两个关键信息——一是选用的压缩算法，而是压缩后的数据长度。BlueStore用压缩投bluestore_compression_header_t表示：
+数据压缩有两个关键信息——一是选用的压缩算法，而是压缩后的数据长度。BlueStore用**压缩头bluestore_compression_header_t**表示：
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119112534.png)
 
@@ -923,7 +923,7 @@ onode包含四个部分：**数据、扩展属性、omap头部和omap条目**。
 
 其中extent map的索引策略考虑了局部性原理——加载onode后，大概率继续加载extent map，因此onode和对应extent map相邻存储可以提升性能。
 
-onode的磁盘数据结构如下：
+onode的磁盘数据结构bluestore_onode_t如下表所示：
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241119173905.png)
 
@@ -1095,4 +1095,116 @@ BitmapAllocator定义的公共接口如下表所示：
 
 ## 5.1.RocksDB与BlueFS
 
-2011年诞生的LevelDB基于Google的BitTable数据库系统发展而来，是键值对类型的日志型非关系数据库，为存储海量键值对设计。理论上LevelDB的键和值只收存储容量限制
+### 5.1.1.RocksDB
+
+2011年诞生的**LevelDB基于Google的BitTable数据库系统**，是**键值对类型的日志型非关系数据库**，为存储**海量键值对**设计。理论上LevelDB的键和值只受存储容量限制，可以为任意长度的字节流，并严格按照键排序。LevelDB继承并发展了**LSM-Tree**和**SSTable**（Sorted String Table，对所有修改重定向，即从不覆盖写），将sst在磁盘上分级存储。
+
+但LevelDB的单线程压缩（Compaction）以及用mmap将SSTable读入内存等做法无法发挥SSD的性能。因此基于LevelDB诞生了RocksDB，为新型高性能固态存储提供卓越的键值对类型数据库访问性能。下表展示了二者的性能对比。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241120194458.png)
+
+RocksDB具有如下特性：
+
+* 专为使用**本地闪存存储**、**数据库容量不超过几TB**的应用程序设计，是一种非**内嵌的分布式数据库**。
+
+* 适合存储**小型/中型键值对**——**性能随键值对长度上升快速下降**。
+
+* 性能随CPU核数及后端存储的I/O能力呈线性扩展。
+
+* 支持列簇（Column Families）、备份和还原点、Merge操作符等。
+
+RocksDB采用C++开发，设计灵活，**几乎所有组件都可替换**，例如固化SSTable和WAL（Write Ahead Log，日志）的本地文件系统。**BlueStore默认采用RocksDB**取代LevelDB作为**元数据存储引擎**。同时，因为多数本地文件系统（如XFS、ext4、ZFS等）的**很多功能非必须**，需要裁剪，所以为RocksDB定制一个本地文件系统解决的更加彻底，BlueFS应运而生。
+
+---
+
+### 5.1.2.BlueFS
+
+BlueFS是个简易的用户态日志型文件系统，其实现了RocksDB::Env的所有接口，用于固化RocksDB运行过程中产生的.sst（SSTable）和.log（WAL）文件。WAL对RocksDB的性能至关重要，所以BlueFS支持将.sst和.log分开存储，方便用更高速的设备存储。
+
+引入BlueFS后，BlueStore将所有存储空间从逻辑上分为三个层次：
+
+**（1）慢速（Slow）空间**
+
+主要存储**对象数据**，可由普通大容量机械磁盘提供，由**BlueStore自行管理**。
+
+**（2）高速（DB）空间**
+
+存储BlueStore元数据（如onode），可由普通SSD提供，容量需求比（1）小。BlueStore的元数据交给RocksDB管理，而RocksDB最终通过BlueFS将数据存盘，因此由BlueFS直接管理。
+
+**（3）超高速（WAL）空间**
+
+主要用于存储RocksDB产生的.log文件，可由更高性能SSD充当，容量需求和（2）相当（也取决于RocksDB的配置）。也由BlueFS直接管理。
+
+高速、超高速空间需求不是固定的，如果这两个空间规划的较为保守，BlueFS也允许用慢速空间进行数据转存。因此，**BlueStore会共享一部分慢速空间给BlueFS**，并**实时监控和动态调整**，具体策略为：BlueStore用一个周期性唤醒的同步线程查询BlueFS的可用空间，如果**BlueFS的可用空间**在整个BlueStore的可用空间中**占比过小**，则**分配一定量空间到BlueFS**（空间不足设定最小值时，追加到最小值），**反之则从BlueFS中回收一部分空间到自身**。
+
+综上，如果3类空间分别用不同设备，则一般情况下BlueFS中有3种可用空间。
+
+	.log文件及BlueFS日志（BlueFS也是日志型本地文件系统）：优先用WAL空间，其次用DB空间，均不存在/空间不足则用Slow空间。
+	
+	.sst文件：优先用DB空间，不存在/空间不足则用Slow空间。
+
+**Slow类型空间均由BlueStore管理**，分配给BlueFS的段用**bluefs_extents**管理，并从Allocator中扣除。bluefs_extents中的每个元素对应Slow设备的一个段，每次**更新后会作为BlueStore的元数据存盘**。这样BlueFS上电时，通过预加载bluefs_extents，就可以正确初始化对应的Allocator。DB设备和WAL设备由BlueFS负责初始化，因此**BlueFS上电时通常会初始化3个Allocator实例**。
+
+虽然BlueStore已经将所有已分配空间信息保存在每个Onode中，但Onode数目可能十分庞大，为了加速上电过程，**BlueStore会额外固化一张空闲空间列表**，但实际这两类信息是重复的。
+
+BlueFS则不同，其存储规模十分有限，一般为BlueStore的千分之一到百分之一；另一方面RocksDB生成的.sst文件大小固定且从不修改。因此**BlueFS**不保存任何额外的分配信息，而是**在上电时遍历所有文件元数据，来生成Allocator**。
+
+---
+
+## 5.2.磁盘数据结构
+
+BlueFS是日志型文件系统，磁盘数据主要包括文件、目录和日志三种类型。
+
+层级（树状）结构组织目录和文件的数据格式较复杂，而且在小规模数据时效率低于扁平结构。BlueFS因为只用于存储单个BlueStore（对应一块磁盘）的元数据，文件规格较统一（绝大多数为sst）且数量有限，所以**采用扁平结构组织**。
+
+BlueFS使用两类表来追踪所有文件及目录层级关系：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121160858.png)
+
+BlueFS定位一个文件**共需两次查找**：第一次通过dir_map找到文件所在最底层目录；第二次通过目录的file_map找到对应文件。**dir_map中描述的都是文件的绝对路径，条目之间没有隶属关系**。
+
+每个文件采用类似inode的结构管理，称为bluefs_fnode_t（简称fnode）。file_map建立的是文件名和fnode之间的映射关系：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121161214.png)
+
+其中，因为文件可能来自多个不同块设备（WAL,DB,Slow）的空间，因此extents中的单个**extent还需记录归属的块设备标识**（其他和bluestore_pextent_t相同），用数据结构bluefs_extent_t表示，如下表：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121161644.png)
+
+BlueFS的**所有修改操作都基于日志**，每个修改操作会生成一个独立的日志事务，再通过**flush_log()批量固化日志**。例如mkdir()会生成如下日志，然后向上层返回操作成功：
+
+```
+op_code: OP_DIR_CREATE
+op_data: dir(string)
+```
+
+BlueFS采用**增量日志**，日志膨胀会浪费空间，并且初始化速度慢，需要定期进行**日志压缩**。将最新dir_map和所有file_map通过一个独立日志事务存盘，通过这个日志即可还原完整的dir_map和file_map，亦即可以作为后续增量的基准，在基准日志之前的日志都可以删除（通过序列号比较）。
+
+早期日志压缩的**完全同步造成了写停顿问题**（write stalls），改进后**仅在生成内存基准日志事务时严格同步**（通过BlueFS全局的排他锁），而其他过程异步，大大改善了写停顿。综上，我们定义**日志事务的磁盘数据结构bluefs_transaction_t**如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121163636.png)
+
+上电时，我们总是通过**日志重放**来得到**BlueFS的所有元数据**，需要一个索引日志位置的固定入口，BlueFS总是将其写到自身接管的**DB设备的第二个4K存储空间**，结构为**bluefs_super_t**，如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121164612.png)
+
+BlueFS提供的API与传统文件类似，不再赘述。我们可以得到数据从OSD到落盘的路径如下图所示，其中BlueFS->Block Device除元数据外还包括日志数据：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241120201718.png)
+
+---
+
+## 5.3.块设备
+
+BlueStore管理的Slow、DB和WAL空间可以分别使用不同类型的块设备（Block Device）提供。Linux中块设备被当做文件管理，访问通过驱动程序实现，且只能以块为粒度进行。
+
+块设备的传输速率取决于制造工艺和使用的**总线（传输）标准**，例如SATA 3.0理论上限为6Gbps，PCIe 3.0X4上限则高达32Gbps。SATA总线对应的**AHCI接口专为机械硬盘设计**，不适合SSD。**NVMe（Non-Volatile Memory express）**与AHCI类似，是**逻辑设备接口标准**，基于PCIe的NVMe SSD有着数十倍以上的IOPS，时延则降低几十倍。
+
+SPDK（Storage Performance Development Kit）是高性能、可扩展、用户态的存储类应用程序的工具套，它将必需的驱动程序移动到用户态，用主动轮询替代中断来避免内核开销。SPDK自带NVMe驱动，目前BlueStore**基于SPDK实现了对NVMe块设备的支持**，后续计划增加NVRAM的支持，以提供更高的性能。
+
+---
+
+# 6.实现原理
+
+## 6.1.mkfs
+
