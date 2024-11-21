@@ -1159,17 +1159,17 @@ BlueFS是日志型文件系统，磁盘数据主要包括文件、目录和日�
 
 BlueFS使用两类表来追踪所有文件及目录层级关系：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121160858.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121160858.png)
 
 BlueFS定位一个文件**共需两次查找**：第一次通过dir_map找到文件所在最底层目录；第二次通过目录的file_map找到对应文件。**dir_map中描述的都是文件的绝对路径，条目之间没有隶属关系**。
 
 每个文件采用类似inode的结构管理，称为bluefs_fnode_t（简称fnode）。file_map建立的是文件名和fnode之间的映射关系：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121161214.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121161214.png)
 
 其中，因为文件可能来自多个不同块设备（WAL,DB,Slow）的空间，因此extents中的单个**extent还需记录归属的块设备标识**（其他和bluestore_pextent_t相同），用数据结构bluefs_extent_t表示，如下表：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121161644.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121161644.png)
 
 BlueFS的**所有修改操作都基于日志**，每个修改操作会生成一个独立的日志事务，再通过**flush_log()批量固化日志**。例如mkdir()会生成如下日志，然后向上层返回操作成功：
 
@@ -1182,15 +1182,15 @@ BlueFS采用**增量日志**，日志膨胀会浪费空间，并且初始化速�
 
 早期日志压缩的**完全同步造成了写停顿问题**（write stalls），改进后**仅在生成内存基准日志事务时严格同步**（通过BlueFS全局的排他锁），而其他过程异步，大大改善了写停顿。综上，我们定义**日志事务的磁盘数据结构bluefs_transaction_t**如下：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121163636.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121163636.png)
 
 上电时，我们总是通过**日志重放**来得到**BlueFS的所有元数据**，需要一个索引日志位置的固定入口，BlueFS总是将其写到自身接管的**DB设备的第二个4K存储空间**，结构为**bluefs_super_t**，如下表所示：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241121164612.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121164612.png)
 
 BlueFS提供的API与传统文件类似，不再赘述。我们可以得到数据从OSD到落盘的路径如下图所示，其中BlueFS->Block Device除元数据外还包括日志数据：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241120201718.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241120201718.png)
 
 ---
 
