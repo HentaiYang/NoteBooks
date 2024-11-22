@@ -1204,7 +1204,107 @@ SPDK（Storage Performance Development Kit）是高性能、可扩展、用户�
 
 ---
 
-# 6.实现原理
+# 6.具体实现
 
 ## 6.1.mkfs
+
+mkfs负责**固化用户指定的配置项到磁盘**，后续**BlueStore上电时直接从磁盘读取**，不会再受配置文件改变的影响（每个BlueStore实例的配置项都可以不同）。因为不同配置下BlueStore的磁盘组织形式不同，如果两次上电有不同配置项可能导致永久性损坏。mkfs中需要写入的**典型配置项**如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121192003.png)
+
+---
+
+## 6.2.mount
+
+mount在**OSD进程上电**时完成**正常上电前的检查和准备工作**，处理逻辑如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121192252.png)
+
+其主要包含以下步骤：
+
+**（1）校验ObjectStore类型**
+
+校验ObjectStore和磁盘实际使用的ObjectStore类型相同，防止将数据写坏。
+
+**（2）fsck或deep-fsck**
+
+fsck扫描并校验BlueStore实例中的**所有元数据**，deep-fsck会**进一步校验所有对象数据**。这一操作可以通过Ceph的工具选择在业务空闲、或例行维护时手动进行。mount的**fsck选项默认关闭**。
+
+**（3）加载并锁定fsid**
+
+**fsid唯一标识一个BlueStore实例**，锁定fsid是为了防止该磁盘被多个OSD进程的BlueStore实例同时打开和访问，影响数据一致性。
+
+**（4）加载主块设备**
+
+用作存储对象数据，一般是大容量慢速磁盘，由BlueStore直接管理。
+
+**（5）加载数据库，读取元数据**
+
+mount过程从数据库读取的主要元数据如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121193218.png)
+
+**（6）加载Collection**
+
+如前所述，Collection数量有限，所以可以常驻内存。
+
+**（7）其他处理**
+
+随后，mount**创建工作线程**（如同步线程，执行回调的finisher线程，监控线程等），如果上次下电不是优雅下电，那么**可能需要执行日志重放**来恢复数据。最后会**设置校验算法、压缩算法等全局参数**后，mount全部完成，上层应用可以正常读写BlueStore当中的数据。
+
+---
+
+## 6.3.read
+
+读取对象指定范围内的数据，目前BlueStore实现的read接口是同步的，其处理逻辑如下：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121193751.png)
+
+read逻辑比较简单，主要涉及查找Collection、查找Onode、读缓存和读磁盘4个步骤：
+
+**（1）查找Collection**
+
+Collection数量有限且全在内存里，耗时相对后续几乎可以忽略。如果Collection存在，则获取其读写锁的读锁，即针对同一个Collection的读操作可以并发。
+
+**（2）查找Onode**
+
+Onode使用LRU队列管理，如果LRU没有命中，则需要基于其磁盘格式在内存中重建。Onode的管理结构如下图所示，每个Onode包含一张ExtentMap，ExtentMap包含数个Extent，每个Extent管理一段逻辑范围并关联一个Blob，Blob通过若干个pextent将数据映射到磁盘。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121195708.png)
+
+每个Blob包含一个**SharedBlob**，是一张**基于pextent的引用计数表**，用于实现Extent之间的**数据共享**。此外，SharedBlob还包含BufferSpace，用于缓存Blob数据并纳入Cache管理。
+
+每个Blob有shared和!shared状态，为**shared状态**时表明Blob被多个Onode共享，此时SharedBlob**关联了有效的引用计数表**，和ExtentMap一样，这张表是按需加载的，只有需要使用时才从kvDB加载到SharedBlob，此时**SharedBlob状态变为loaded**（对应有未加载引用计数表的!loaded状态），BlueStore会同步将其**加入Collection的全局SharedBlob缓存**。
+
+因此，如果**Onode没有在缓存命中**，为防止重建Onode的读取数据过多，**ExtentMap、SharedBlob等管理结构都是动态、根据需要进行加载的**。
+
+**（3）读缓存**
+
+Onode**在缓存命中**时，说明部分数据已经在全局Cache中，此时BlueStore会尝试从Cache读取，并产生**已命中数据区域**和**未命中数据区域**两张列表。
+
+**（4）读磁盘**
+
+**有数据未在缓存命中**时需要读磁盘，我们根据（3）中的未命中数据区域列表**加载对应的Extent到内存**，然后**读取磁盘对应位置**。BlueStore会根据配置**校验数据**（防止静默数据错误），并**解压数据**（如果数据被压缩），最后通过**拼凑和填充**（全0）的方式得到完整数据并返回。
+
+---
+
+## 6.4.write
+
+write在内的**所有涉及数据修改的操作**，都是**通过queue_transactions接口以事务组的形式提交到BlueStore**的。queue_transactions处理逻辑如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121201909.png)
+
+OpSequencer在本章第1节介绍过，用于对同一个PG提交的多个事务组保序。对于**同一个事务组的多个操作**，BlueStore会创建一个**事务上下文TransContext**，并**顺序添加每个修改操作**后批量处理，添加完成后（此时修改操作对应的内存版本完成），TransContext**汇总操作数及波及字节数**，再提交给Throttle（BlueStore内部的一种流控机制）判断**是否进行写抑制**，没有过载则不需要写抑制，开始执行TransContext。
+
+所有queue_transactions提交的事务组都是异步执行的，需要**若干类型的回调上下文**，事务组执行到特定阶段后，执行回调上下文来唤醒**上层应用执行相应操作**。常见的回调上下文有两种：
+
+	on_readable：写日志完成应答，修改操作写入日志设备后进行的回调。
+	
+	on_commit：数据写入主要存储设备后进行的回调，也称on_disk或on_safe。
+
+BlueStore的写操作只会产生少量WAL日志，并和其他元数据一并用kvDB保存，所以写日志要先于写数据完成，在对应事务组完成后，BlueStore会先执行on_commit，然后执行on_readable（出于兼容性考虑，BlueStore实际并不需要on_readable）***（存疑？这里为什么矛盾？）***
+
+将write加入TransContext的流程如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121205448.png)
 
