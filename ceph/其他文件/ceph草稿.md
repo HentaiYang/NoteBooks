@@ -1290,6 +1290,8 @@ Onode**在缓存命中**时，说明部分数据已经在全局Cache中，此时
 
 ## 6.4.write
 
+### 6.4.1.queue_transactions
+
 write在内的**所有涉及数据修改的操作**，都是**通过queue_transactions接口以事务组的形式提交到BlueStore**的。queue_transactions处理逻辑如下图所示：
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121201909.png)
@@ -1304,7 +1306,213 @@ OpSequencer在本章第1节介绍过，用于对同一个PG提交的多个事务
 
 BlueStore的写操作只会产生少量WAL日志，并和其他元数据一并用kvDB保存，所以写日志要先于写数据完成，在对应事务组完成后，BlueStore会先执行on_commit，然后执行on_readable（出于兼容性考虑，BlueStore实际并不需要on_readable）***（存疑？这里为什么矛盾？）***
 
+---
+
+### 6.4.2.write
+
 将write加入TransContext的流程如下图所示：
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241121205448.png)
+
+write不操作任何已有数据称为**新写**，反之则均为**覆盖写**。
+
+#### 6.4.2.1.新写
+
+新写需要按照逻辑地址范围进行**MAS（最小可分配空间）对齐**，分为**头尾非MAS对齐写**和**中间MAS对齐写**。
+
+**MAS对齐的新写**的处理逻辑如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241123110751.png)
+
+对大量数据写入分为多个Extent主要是防止生成的校验数据过大，影响kvDB的索引效率。
+
+**非MAS对齐的新写**和上图流程类似，区别在于：
+
+* 每次至多需要分配一个Extent。
+* Extent中blob_offset不再为0。
+* 待写入数据需要块对齐，无效部分填充0，防止干净数据被污染。
+
+#### 6.4.2.2.覆盖写
+
+因为BlueStore对于MAS对齐部分总是执行COW，所以**MAS对齐的覆盖写**处理逻辑和新写类似，但需要找出所有波及范围已经存在的ExtentMap、Extent和对应空间，在同步完成后一并释放。
+
+对于**头尾非MAS对齐的覆盖写**则较复杂，需要考虑如下因素：
+
+**（1）能否直接跳过，执行COW**
+
+常见于Extent被压缩过，此时RMW代价太大，直接采用COW。
+
+**（2）能否直接复用已有Extent的unused块**
+
+如果MAS大于基本块大小，那么Extent中可能产生块粒度的空穴，被标记为unused。如果写入内容不足一个unused块，则头尾无效部分填充0。
+
+**（3）是否需要执行WAL写**
+
+此时**RMW操作无法避免**，为避免写坏数据，需要**使用WAL**。下图展示了WAL的常见情况（假定MAS为基本块大小，如果不为基本块大小，则其头尾非基本块对齐部分处理逻辑同下）：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241124165935.png)
+
+WAL写包括**补齐读、合并、全0填充3**个步骤，BlueStore随后基于此数据生成一个**日志事务**，并加入对应的**TransContext**。此日志事务**用kvDB保存**，写入kvDB后才能**对原区域数据执行覆盖写**，效率很低。
+
+---
+
+### 6.4.3.TransContext
+
+所有的修改操作都添加到TransContext时，就可以开始处理TransContext了，其处理过程分为3阶段：
+
+**（1）等待所有在途的写I/O完成**
+
+主要是COW产生的I/O，将直接写入新磁盘空间，因此可以和对应事务的产生**同步执行**。如果掉电，那么**新分配空间和待释放的旧空间尚未更新到kvDB**，没有影响。
+
+**（2）同步所有涉及的元数据修改到kvDB**
+
+包括**已申请空间和待释放空间**（只需固化FreelistManager），通过一个事务同步提交至**kvDB**。因为kvDB的ACID属性，本阶段可以保证数据一致性。
+
+**（3）通过WAL对应的日志事务执行覆盖写**
+
+WAL日志事务已经写入数据库，**通过重放安全的执行覆盖写**。覆盖写完成后再**生成一个释放该WAL日志事务条目的事务**，同步提交至kvDB并等待完成，最后将所有**待释放空间加入Allocator**。本阶段为**可选**，没有WAL写时在（2）阶段完成后即释放到Allocator。
+
+---
+
+# 7.使用指南
+
+## 7.1.部署BlueStore
+
+OSD需要预留少量空间存储OSD启动的引导数据，并用本地文件系统格式化（此时后端的ObjectStore还未正常上电，无法直接访问），较大的分区则以裸设备的形式充当Slow设备。我们可以得到一个OSD模型如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125094316.png)
+
+部署BlueStore时，首先将主设备划分为大小两个分区，小分区（例如100MB）存放OSD的启动引导数据，同时作为OSD启动后的工作目录，用本地文件系统格式化；大分区直接作为裸的块设备，和另外两个裸块设备（或分区）通过符号链接挂载到OSD的工作目录下。全SSD或测试情况下，**可以用同一块设备的4个分区完成BlueStore的部署**。
+
+所有设备就绪时，修改ceph.conf即可完成BlueStore部署：
+
+```bash
+[osd.0]
+host = ceph-01
+osd data = /var/lib/ceph/osd/ceph-0/
+bluestore block path = /dev/disk/by-partlabel/osd-device-0-block
+bluestore db path = /dev/disk/by-partlabel/osd-device-0-db
+bluestore wal path = /dev/disk/by-partlabel/osd-device-0-wal
+```
+
+这样BlueStore上电时将在OSD工作目录下创建block、block.db、block.wal三个文件，然后通过ceph.conf通过符号链接指向分区/设备路径。
+
+通过ceph-disk可以自动部署BlueStore，为此需要通过ceph.conf规划各个分区大小：
+
+```bash
+[global]
+bluestore block db size = 67108864
+bluestore block wal size = 134217728
+bluestore block size = 5368709120
+```
+
+然后执行：
+
+```bash
+sudo ceph--disk prepare --bluestore /dev/sdb
+```
+
+将在sdb上创建4个分区：
+
+```bash
+sudo sgdisk -p /dev/sdb
+...
+Number	Start	End			Size		Code	Name
+1		2048	206847		100.0 MiB	FFFF	ceph data
+2		206848	337919		64.0 MiB	FFFF	ceph block.db
+3		337920	600063		128MiB		FFFF	ceph block.wal
+4		600064	11085823	5.0GiB		FFFF	ceph block
+```
+
+也支持用多个块设备：
+
+```bash
+sudo ceph-disk prepare --bluestore /dev/sdb --block.db /dev/sdc --block-wal /dev/sdc
+```
+
+上述命令将在sdb创建2个分区，分别为ceph的工作目录和block；block.db和block.wal则分别指向sdc的第1、2个分区。
+
+进一步分离block.db和block.wal：
+
+```bash
+sudo ceph-disk prepare --bluestore /dev/sdb --block.db /dev/sdc1 --block.wal /dev/sdd1
+```
+
+目前的推荐容量配置为Slow:DB:WAL=100:1:1进行配置，更大的DB和WAL效果更佳。
+
+目前（2017年）BlueStore和RocksDB仍被标记为实验性质，需要添加如下配置才能正常启用：
+
+```bash
+[global]
+enable experimental unrecoverable data corrupting features = bluestore rocksdb
+osd objectstore = bluestore
+```
+
+---
+
+## 7.2.配置参数
+
+所有和BlueStore相关的配置参数如下。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100516.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100551.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100607.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100620.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100645.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100658.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100711.png)
+
+---
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100734.png)
+
+---
+
+
+
+
+
+# 第三章 时空博弈——纠删码原理与overwrites支持
+
+**组件失效导致的数据丢失风险**是所有存储系统面临的共同考研，小到静默数据错误，大到主机或整个机柜异常掉电。**纠删码（Erasure Coding，EC）**是常用的数据保护机制，对原始数据**分片**并**编码**生成备份数据，最后分别写入不同存储介质。数据恢复是编码的逆运算，称为**解码**。
+
+纠删码的**容错能力取决于备份数据的份数**，也是系统中**允许同时失效的最大存储介质数目**。通常备份数据份数越多，编码就越复杂，额外空间消耗越多。实际中**很少使用阶数（备份数据份数）高于2的纠删码**。
+
+最简单的纠删码就是完全复制，但开销过大。RAID（Redundant Array of Independent Disk，指RAID5或RAID6），以及衍生的更具一般性的RS-RAID（Reed-Solomon RAID），以更复杂的编解码策略降低存储空间成本。
+
+---
+
+# 1.RAID技术概述
+
+单个磁盘存储数据有访问速度慢、容量小、安全性差的固有缺陷，**RAID技术尝试使用多个磁盘联合提供存储服务**。
+
+磁盘数据以扇区为基本单位，RAID抽象出一个类似的最小数据访问单位——条带
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125102105.png)
+
+
+
+
+
+
+
+
 
