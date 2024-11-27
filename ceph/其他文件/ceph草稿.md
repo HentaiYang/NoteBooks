@@ -1745,6 +1745,41 @@ Jerasure库的大部分纠删码还引入了字长w参数，即一次编码的�
 
 如果包过大，导致切分到某些盘的数据不足一个包，则用全0填充（异或的性质）。下表为Jerasure常见参数及含义：
 
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127161000.png)
+
+针对业界最普遍使用的“m=2“（RAID6），Jerasure进行了两类优化：一类优化针对范德蒙德矩阵，因为矩阵中只包含1和2，所以可以对乘2运算优化；另一类则直接改造编码矩阵，使用最小密度RAID6（Minimal Density RAID6）的编码方法集，使用位矩阵，且要求非0元素尽可能少。目前支持3种最小密度RAID6：
+
+* Liberation：要求w必须是素数。
+* Blaum-Roth：要求w+1必须是素数。
+* Liber8tion：要求w必须等于8。
+
+Jerasure目前所支持的编解码方式如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127174508.png)
+
+---
+
+# 3.纠删码在Ceph中的应用
+
+Ceph的数据保护方式有多副本和纠删码两种，其中**纠删码以插件的形式**提供服务。Ceph支持的纠删码实现包括**Jerasure（默认）、ISA**（Intel STorage Acceleration，专用于x86 CPU）等。在Ceph中使用纠删码首先要指定**详细配置模板**，再与对应存储池绑定，模板参数如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127175007.png)
+
+上表中键值对部分需要根据纠删码的官方文档进一步进行配置，以Jerasure为例：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127175526.png)
+
+由此，我们可以创建一个纠删码模板：
+
+```bash
+ceph osd erasure-code-profile set my-ec-profile plugin=jerasure k=4 m=2 technique=liber8tion ruleset-failure-domain=host
+```
+
+创建了一个采用liber8tion算法（此时m必须为2）、容灾域为主机级别（k+m=6，至少有6台主机）的纠删码，可以通过如下命令查看：
+
+```
+```
+
 
 
 
