@@ -1322,7 +1322,7 @@ write不操作任何已有数据称为**新写**，反之则均为**覆盖写**�
 
 **MAS对齐的新写**的处理逻辑如下图所示：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241123110751.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241123110751.png)
 
 对大量数据写入分为多个Extent主要是防止生成的校验数据过大，影响kvDB的索引效率。
 
@@ -1350,7 +1350,7 @@ write不操作任何已有数据称为**新写**，反之则均为**覆盖写**�
 
 此时**RMW操作无法避免**，为避免写坏数据，需要**使用WAL**。下图展示了WAL的常见情况（假定MAS为基本块大小，如果不为基本块大小，则其头尾非基本块对齐部分处理逻辑同下）：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241124165935.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241124165935.png)
 
 WAL写包括**补齐读、合并、全0填充3**个步骤，BlueStore随后基于此数据生成一个**日志事务**，并加入对应的**TransContext**。此日志事务**用kvDB保存**，写入kvDB后才能**对原区域数据执行覆盖写**，效率很低。
 
@@ -1380,7 +1380,7 @@ WAL日志事务已经写入数据库，**通过重放安全的执行覆盖写**�
 
 OSD需要预留少量空间存储OSD启动的引导数据，并用本地文件系统格式化（此时后端的ObjectStore还未正常上电，无法直接访问），较大的分区则以裸设备的形式充当Slow设备。我们可以得到一个OSD模型如下图所示：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125094316.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125094316.png)
 
 部署BlueStore时，首先将主设备划分为大小两个分区，小分区（例如100MB）存放OSD的启动引导数据，同时作为OSD启动后的工作目录，用本地文件系统格式化；大分区直接作为裸的块设备，和另外两个裸块设备（或分区）通过符号链接挂载到OSD的工作目录下。全SSD或测试情况下，**可以用同一块设备的4个分区完成BlueStore的部署**。
 
@@ -1454,35 +1454,35 @@ osd objectstore = bluestore
 
 所有和BlueStore相关的配置参数如下。
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100516.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100516.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100551.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100551.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100607.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100607.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100620.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100620.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100645.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100645.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100658.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100658.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100711.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100711.png)
 
 ---
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125100734.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241125100734.png)
 
 ---
 
@@ -1504,11 +1504,281 @@ osd objectstore = bluestore
 
 单个磁盘存储数据有访问速度慢、容量小、安全性差的固有缺陷，**RAID技术尝试使用多个磁盘联合提供存储服务**。
 
-磁盘数据以扇区为基本单位，RAID抽象出一个类似的最小数据访问单位——条带
+磁盘数据以扇区为基本单位，RAID抽象出一个类似的最小数据访问单位——**条带**，在多个磁盘间建立逻辑映射，抽象为一个容量更大、I/O并发能力更高的虚拟磁盘，以条带为基本单位管理，如下图所示：
 
-![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/1/20241125102105.png)
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125102105.png)
 
+主流的RAID有如下几种基本模式（假定所有磁盘规格相同）：
 
+**（1）RAID0**
+
+将多个磁盘以条带为单位重新划分，形成一个逻辑连续的虚拟磁盘，**I/O能力和可用空间是所有磁盘之和**，但**不具备容错能力**。如下图所示。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125192000.png)
+
+**（2）RAID1**
+
+将同一份数据**重复写入多个磁盘**，每个磁盘存储完全相同，也称为**镜像**，提供的**I/O能力和存储空间都只有1/N**。容错能力和镜像个数N成正比。下图为N=2的RAID1系统：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125193023.png)
+
+**（3）RAID5**
+
+以一个或多个基本块作为**条带深度均分数据**，通过**异或计算数据块大小的校验块**，I/O能力及可用空间为所有磁盘的(N-1)/N，N为磁盘个数，即条带宽度。数据出错可以通过异或恢复数据，因此RAID5具有容错能力，最多允许一块磁盘异常。校验块的位置会不停地在磁盘间跳动。下图为一个条带宽度为4、深度为4个基本块的RAID5系统。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125193614.png)
+
+RAID5条带宽度和深度通常是固定的，但ZFS自带的**RAID5（RAIDZ）的条带宽度和深度可以根据I/O大小动态调整**，从而避免浪费和提升I/O并发能力（很明显固定的大小很容易产生空穴）。下图为RAIDZ的条带分布：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125194846.png)
+
+**（4）RAID6**
+
+进一步提升了容错能力，**允许同时两块磁盘故障**，代价是每个条带包含**两个校验块**，空间和I/O利用率都比RAID5要低，算法也更复杂。
+
+上述形式中，**RAID0最快，可以与其他RAID形式组合**，常见组合有RAID10、RAID50等。
+
+---
+
+# 2.RS-RAID和Jerasure
+
+RAID5基于条带将数据均匀切分为多个数据块di（i=1,2,...,n），然后尝试建立数据块之间的联系，例如用普通的加法：
+
+```
+d1+d2+...+dn=c
+```
+
+c称为基于加法生成的校验块，这样通过解方程就可以恢复数据块。但加法并不适合计算机，实际中用的是**异或运算**：首先异或是**极其高效的位运算**；其次，异或**存在逆运算且与正向运算完全相同**；最后，**异或不会产生进位**，校验块大小与数据块相同。
+
+RAID6或更高阶的RAID原理相似，都是利用条带中n个数据块通过编码得到m个校验块（即系统允许同时m个磁盘故障），通过**解码**就可以还原所有缺失数据块。
+
+将上述过程转为更一般的描述形式：**基于n个可变输入，构造m个等式，使m元一次方程组有唯一解**（解码时，故障磁盘数对应未知数）。通信领域的Reed-Solomon codes就是解决的这个问题，将其引入存储系统后成为**RS-RAID**，简单来说包含如下3个方面：
+
+* 基于范德蒙德矩阵**计算校验和**
+* 基于高斯消元法进行**数据恢复**
+* 基于伽罗华域执行**编解码**过程中所要求的算术运算
+
+---
+
+## 2.1.计算校验和
+
+假定有n个数据块d1,d2,...,dn，定义Fi为所有数据块的线性组合，则根据Fi可以计算得到校验块ci（i=1,2,...,m）：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125202619.png)
+
+如果我们用向量D和C分别表示数据块和校验块的集合，Fi表示矩阵F中的每一行，则有FD=C。
+
+因此F称为编码矩阵，RS-RAID使用m*n范德蒙德矩阵充当编码矩阵F，有：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125202807.png)
+
+因此上述等式变为：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125202820.png)
+
+---
+
+## 2.2.数据恢复
+
+定义矩阵A和向量E，满足：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125202942.png)
+
+于是有AD=E成立：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125203404.png)
+
+此时对于任意一个块，矩阵A和向量E都有一行与之对应，A被称为分布矩阵（后来也称生成矩阵）。假定某个数据块失效，则将相应行从矩阵A和向量E删除，得到：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125203609.png)
+
+恰好有m个数据块失效时，可知A'为一个n*n矩阵，因为F是范德蒙德矩阵，所以A的任意n行都是线性独立的，即非奇异矩阵，因此A'是可逆的，所以D中所有未知数都可以通过高斯消元法求解，即所有数据块都可修复。
+
+---
+
+## 2.3.算术运算
+
+上述恢复使用的高斯消元法需要使用除法运算，但计算机的除法精读有限，且乘法运算容易产生进位，增加了校验块空间。
+
+我们定义一个整型集合：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204220.png)
+
+集合对应w位数据能表示的数值范围。我们定义基于该集合的加减乘除四则运算，并且在集合内封闭。我们将满足上述约束的集合称为伽罗华域，也称有限域，数学表达式为![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204437.png)。
+
+RS-RAID实现的加法就是异或运算，而异或的逆运算就是异或本身，因此有限域的减法运算也是异或。容易验证GF(2)={0,1}中异或运算是封闭的：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204734.png)
+
+为推导乘法运算的一般形式，我们先定义基于GF(2)={0,1}的多项式基本运算规则:
+
+* 多项式系数全部来自GF(2)（只能取0或1）。
+* 多项式中次数相同的项，可以基于GF(2)的加法（异或运算）进行合并。
+
+```
+假定：
+r(x) = x + 1
+s(x) = x
+则有：
+r(x) + s(x) = x + 1 + x = (1 + 1)x + 1
+			=(1 ^ 1)x + 1 = 0 + 1 = 0 ^ 1 = 1
+```
+
+基于该规则，我们可以定义多项式的模运算规则如下：
+
+```
+如果r(x) = q(x)t(x) + s(x)，其中：
+	s(x)和t(x)为任意多项式，且s(x)的次数小于q(x)
+则：
+	r(x) mod q(x) = s(x)
+```
+
+例如：
+
+```
+假定：
+r(x) = x² + x
+q(x) = x² + 1
+所以：
+r(x) mod q(x) = x + 1
+```
+
+如果多项式q(x)满足：
+
+* 次数为w。
+* 所有项的系数来自GF(2)。
+* 不能被因式分解
+
+那么可以基于q(x)生成![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204437.png)中所有元素，过程如下：
+
+1）前三个元素固定为0、1、x。
+
+2）将前一个元素乘以x，然后对q(x)取模。
+
+3）重复步骤2），直到结果为1。
+
+满足上述条件的q(x)称为![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204437.png)的生成多项式，记作：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210128.png)
+
+常见的生成多项式：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210150.png)
+
+针对w=4，使用q(x)=x^4+x+1生成GF(2^4)所有元素的过程如下（注意加法和减法都是异或运算，用加号表示）：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210308.png)
+
+为了在RS-RAID中使用![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204437.png)，需要将上述多项式中每项系数与对应二进制对应。以w=4为例：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210617.png)
+
+据此可以定义乘法运算规则：
+
+1）将乘数和被乘数的二进制（十进制）表示转换为对应的多项式表示。
+
+2）执行多项式乘法，将得到的结果针对q(x)取模。
+
+3）将2）得到的结果转换为对应的二进制（十进制）表示。
+
+例如：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210828.png)
+
+或者根据表3-1有：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210917.png)
+
+由对数运算性质：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125210935.png)
+
+可见，引入对数运算可将乘除法转化为加减法。我们用gflog和gfilog分别表示![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204437.png)的对数运算和其逆运算，则乘除法可简化为，其中mod(2^w-1)等价于对q(x)取模：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125211053.png)
+
+如果能预先计算所有元素的gflog和gfilog表，就可以快速执行任两个元素的乘除法运算。而![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125204437.png)中每个元素都由原生多项式x^i得来，因为：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125211314.png)
+
+所以有：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125211343.png)
+
+例如针对GF(2^4)，能得到：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125211412.png)
+
+可以得到完整的gflog和gfilog表：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125211428.png)
+
+由此我们可以方便的进行任意两个元素的乘除法运算：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125211526.png)
+
+至此我们完整实现了四则运算，可以完成RS-RAID编解码过程中所需的全部算术运算。
+
+---
+
+## 2.4.缺陷与改进
+
+James发现**分布矩阵A并不具备“删除任意m行所得到n\*n子矩阵仍然可逆”的特性**，进行了修正。修正的分布矩阵（称为分布矩阵B）总是可以通过如下的(n+m)\*n范德蒙德矩阵经过有限步的初等变换，将前n行转化为单位矩阵之后得到：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241125212004.png)
+
+可以证明删除任意m行都是可你的，由此得到的分布矩阵B仍有此特性。
+
+但**直接采用范德蒙德矩阵作为编码矩阵复杂度太高**，一个改进方案的思路为：**一是引入位矩阵（bit matrix）将编码的乘法运算进一步转化为异或运算**；**二是用性能更好的柯西矩阵作为编码矩阵**（可以作为编码矩阵的**柯西矩阵不唯一**），因为范德蒙德矩阵求逆运算时间复杂度为O(n³)而柯西矩阵仅为O(n²)，理论上解码可以快一个数量级。
+
+因为柯西矩阵不唯一，**“好”的柯西矩阵和“坏”柯西矩阵导致的性能差异平均为10%，而极端情况可达83%**，如何生成一个“好”的柯西矩阵的一般性算法发表在《Optimizing Cauchy Reed-Solomon Codes for Fault-Tolerant Storage Applications》一文当中。
+
+---
+
+## 2.5.Jerasure
+
+2007年，James基于上述理论给出一个**RS-RAID的开源实现**，称为**Jerasure**。
+
+Jerasure实现的纠删码是水平方式的，即同时需要**k+m块不同的磁盘**分别承载和校验数据（数据盘和校验盘）。如果存储系统**能够容忍任意m块磁盘同时故障**，那么称此时采用的纠删码为**MDS（Maximum Distance Separable）类型的纠删码**。
+
+Jerasure库的大部分纠删码还引入了字长w参数，即一次编码的长度，如果w=8，则每次至多完成k字节编码；w=16，则每次至多完成k*2字节编码等。部分低阶纠删码，如RAID5，因为只用到异或运算，所以可以直接用天然字长sizeof(long)作为运算的基本单位，此时每次编码的单位称为包（packet），包大小（packetsize）为字长的整数倍即可。
+
+如果包过大，导致切分到某些盘的数据不足一个包，则用全0填充（异或的性质）。下表为Jerasure常见参数及含义：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127161000.png)
+
+针对业界最普遍使用的“m=2“（RAID6），Jerasure进行了两类优化：一类优化针对范德蒙德矩阵，因为矩阵中只包含1和2，所以可以对乘2运算优化；另一类则直接改造编码矩阵，使用最小密度RAID6（Minimal Density RAID6）的编码方法集，使用位矩阵，且要求非0元素尽可能少。目前支持3种最小密度RAID6：
+
+* Liberation：要求w必须是素数。
+* Blaum-Roth：要求w+1必须是素数。
+* Liber8tion：要求w必须等于8。
+
+Jerasure目前所支持的编解码方式如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127174508.png)
+
+---
+
+# 3.纠删码在Ceph中的应用
+
+Ceph的数据保护方式有多副本和纠删码两种，其中**纠删码以插件的形式**提供服务。Ceph支持的纠删码实现包括**Jerasure（默认）、ISA**（Intel STorage Acceleration，专用于x86 CPU）等。在Ceph中使用纠删码首先要指定**详细配置模板**，再与对应存储池绑定，模板参数如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127175007.png)
+
+上表中键值对部分需要根据纠删码的官方文档进一步进行配置，以Jerasure为例：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20241127175526.png)
+
+由此，我们可以创建一个纠删码模板：
+
+```bash
+ceph osd erasure-code-profile set my-ec-profile plugin=jerasure k=4 m=2 technique=liber8tion ruleset-failure-domain=host
+```
+
+创建了一个采用liber8tion算法（此时m必须为2）、容灾域为主机级别（k+m=6，至少有6台主机）的纠删码，可以通过如下命令查看：
+
+```
+```
 
 
 
