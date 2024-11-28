@@ -17,16 +17,30 @@
 
 
 ## 目录
-* [1.循环优化中的基本参数](#p1)
-* [2.PIPELINE & UNROLL](#p2)
-* &nbsp;&nbsp;&nbsp;&nbsp;[2.1.PIPELINE](#p21)
-* &nbsp;&nbsp;&nbsp;&nbsp;[2.2.UNROLL](#p22)
-* [3.LOOP_MERGE](#p3)
+* [1.DATAFLOW](#p1)
+* &nbsp;&nbsp;&nbsp;&nbsp;[1.1.DATAFLOW的使用场景](#p11)
+* &nbsp;&nbsp;&nbsp;&nbsp;[1.2.DATAFLOW编程约定](#p12)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[1.2.1.Single-producer-consumer Model](#p121)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[1.2.2.Bypassing Tasks Model](#p122)
+* [2.嵌套For循环](#p2)
+* &nbsp;&nbsp;&nbsp;&nbsp;[2.1.嵌套For循环的优化逻辑](#p21)
+* &nbsp;&nbsp;&nbsp;&nbsp;[2.2.perfect/semi-perfect loop优化](#p22)
+* &nbsp;&nbsp;&nbsp;&nbsp;[2.3.imperfect loop优化](#p23)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[2.3.1.最内层PIPELINE](#p231)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[2.3.2.中间层PIPELINE](#p232)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[2.3.3.最外层PIPELINE](#p233)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[对函数进PIPELINE](#p234)
+* &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[优化结果](#p235)
+* [3.其他For优化](#p3)
+* &nbsp;&nbsp;&nbsp;&nbsp;[3.1.函数多次实例化](#p31)
+* &nbsp;&nbsp;&nbsp;&nbsp;[3.2.循环之间的间隔](#p32)
+* &nbsp;&nbsp;&nbsp;&nbsp;[3.3.自动PIPELINE](#p33)
+* &nbsp;&nbsp;&nbsp;&nbsp;[3.4.Latency的确定](#p34)
 
 ---
 # 1.DATAFLOW<a id="p1"></a>
 
-## 1.1.DATAFLOW的使用场景
+## 1.1.DATAFLOW的使用场景<a id="p11"></a>
 当循环之间、函数之间、线程之间有顺序数据依赖，可以考虑使用DATAFLOW优化，考虑以下情况：
 
 <div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/6/1.jpg"></div>
@@ -52,8 +66,9 @@
 
 ---
 
-## 1.2.DATAFLOW编程约定
-### 1.2.1.Single-producer-consumer Model
+## 1.2.DATAFLOW编程约定<a id="p12"></a>
+### 1.2.1.Single-producer-consumer Model<a id="p121"></a>
+
 一个输出（write）对应一个输入（read），多个consumer依赖同一个producer时，DATAFLOW不成立，以如下代码为例，loop2和loop3同时使用了temp1的数据，如果是图中的情况，那么硬件层面上会产生读冲突，如果使用FIFO，那么temp1只能被读取一次。
 
 <div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/6/5.jpg"></div>
@@ -63,7 +78,8 @@
 <div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/6/6.jpg"></div>
 
 ---
-### 1.2.2.Bypassing Tasks Model
+### 1.2.2.Bypassing Tasks Model<a id="p122"></a>
+
 Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和temp3，这样也是不能启用DATAFLOW的：
 
 <div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/6/7.jpg"></div>
@@ -74,8 +90,9 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-# 2.嵌套For循环
-## 2.1.嵌套For循环的优化逻辑 
+# 2.嵌套For循环<a id="p2"></a>
+## 2.1.嵌套For循环的优化逻辑<a id="p21"></a>
+
 对于嵌套For循环，首先我们要确定什么样的For循环更适合被优化。
 
 首先如下图所示，内外循环的循环上限均为固定值的循环为perfect loop，这是嵌套优化的最理想状况；内部上限为固定值，而外部为变量的为semi-perfect loop，这种情况也是可以优化的。
@@ -90,7 +107,8 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-## 2.2.perfect/semi-perfect loop优化
+## 2.2.perfect/semi-perfect loop优化<a id="p22"></a>
+
 对于可优化的嵌套循环，我们可以考虑对For循环进行PIPELINE优化，如下图为一个perfect loop
 
 <div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/6/11.jpg"></div>
@@ -104,7 +122,7 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-## 2.3.imperfect loop优化
+## 2.3.imperfect loop优化<a id="p23"></a>
 
 如果想要优化的循环是任意一种形式的imperfect loop，那么我们最好先考虑将其转化为perfect/semi-perfect loop，如果无法转化，那么我们要知道直接优化会带来怎样的结果。
 
@@ -114,7 +132,7 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-### 2.3.1.最内层PIPELINE
+### 2.3.1.最内层PIPELINE<a id="p231"></a>
 
 首先，在最内层的Product打上PIPELINE。从debug信息，我们可以看到HLS会将外层Row展平，但因为Col->Product是imperfect的，所以Col无法执行Flatten。
 
@@ -126,7 +144,7 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-### 2.3.2.中间层PIPELINE
+### 2.3.2.中间层PIPELINE<a id="p232"></a>
 
 然后，对Col层打PIPELINE。通过debug信息，可以看到HLS将内部所有循环做UNROLL，然后对本次与外层进行FLATTEN。
 
@@ -138,7 +156,7 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-### 2.3.3.最外层PIPELINE
+### 2.3.3.最外层PIPELINE<a id="p233"></a>
 
 最后，对Row层打PIPELINE。通过debug信息，可以看到HLS将Row内部所有子循环都进行了UNROLL操作。
 
@@ -150,14 +168,15 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-### 2.3.4.对函数进PIPELINE
+### 2.3.4.对函数进PIPELINE<a id="p234"></a>
+
 根据上面三次优化，很自然的可以想到再进一步将Row循环也UNROLL可以换取更高的效率，那么我们直接对其所在函数打PIPELINE，得到的DEBUG信息如下，三个循环都被UNROLL了：
 
 <div><img src="https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/fpga/6/20.jpg"></div>
 
 ---
 
-### 2.3.5.优化结果
+### 2.3.5.优化结果<a id="p235"></a>
 
 通过对比四次优化的结果，很明显PIPELINE越往外性能越高，但同时资源消耗也成倍上涨，对于任意循环打PIPELINE时，HLS会对其子循环进行UNROLL，对其外层非imperfect loop进行FLATTEN。
 
@@ -165,9 +184,9 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-# 3.其他For优化
+# 3.其他For优化<a id="p3"></a>
 
-## 3.1.函数多次实例化
+## 3.1.函数多次实例化<a id="p31"></a>
 
 对于一个函数内多次调用另一个函数的情况，如下图，HLS默认会分时复用该函数，即串行执行。
 
@@ -188,7 +207,7 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-## 3.2.循环之间的间隔
+## 3.2.循环之间的间隔<a id="p32"></a>
 
 如下图，多次调用同一个函数，并且该函数只有一个循环时，循环之间会产生间隔，此时可以使用PIPELINE中的rewind参数：
 
@@ -204,7 +223,8 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 
 ---
 
-## 3.3.自动PIPELINE
+## 3.3.自动PIPELINE<a id="p33"></a>
+
 在config_compile中配置，只要一个for循环的循环边界小于等于pipeline_loops配置的值，那么编译时就会HLS就会自动进行PIPELINE。
 
 在启用自动PIPELINE时，如果某些符合条件但不想PIPELINE的，可以配置：
@@ -213,7 +233,7 @@ Loop1输出temp1和temp2，Loop2读取temp1，输出temp3，Loop3读取temp2和t
 #pragma HLS PIPELINE off
 ```
 
-## 3.3.Latency的确定
+## 3.4.Latency的确定<a id="p34"></a>
 
 当循环边界是变量时，Vivado无法确定latency，设计的性能未知
 
