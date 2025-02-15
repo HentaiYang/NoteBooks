@@ -691,21 +691,21 @@ BlueStore因为要管理裸设备，其磁盘数据结构极其复杂，除了PG
 
 ### 2.1.1.pool和PG
 
-Ceph对集群所有存储资源池化管理。资源池（pool，也称存储池）是一个虚拟概念，表示一组约束条件，例如针对一个pool制定CRUSH规则，以限制其使用的存储资源或容灾域等；也可以针对不同的pool制定不同副本策略，例如对时延敏感的应用采用多副本备份，不重要的数据则采用纠删码备份以提高空间利用率；甚至分别为pool指定独立scrub、压缩、校验策略等。
+Ceph对集群所有存储资源池化管理。**资源池（pool，也称存储池）**是一个虚拟概念，表示**一组约束条件**。例如针对一个pool制定CRUSH规则，以限制存储资源或容灾域等；或针对不同pool制定副本策略，例如对时延敏感的采用多副本备份，不重要的数据则采用纠删码备份；甚至分别为pool指定独立scrub、压缩、校验策略等。
 
-Ceph将前端数据都抽象为对象，每个对象可以生成全局唯一的OID(Object ID)，形成一个扁平的寻址空间以提升索引效率。
+Ceph将**前端数据都抽象为对象**，每个对象可以生成**全局唯一的OID(Object ID)**，形成一个**扁平的寻址空间**。
 
-为了实现不同pool之间的策略隔离，Ceph引入了中间结构PG，实现两级映射。
+为了实现不同pool之间的策略隔离，Ceph引入了**中间结构PG**，实现**两级映射**。
 
 ![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/2/20241117202746.png)
 
-**两级映射均使用伪随机哈希函数**，以保证均匀性。**第一级为静态映射**，将**任何前端类型的应用数据**按照固定大小切割、编号后，作为哈希输入**映射到PG**；**第二级实现PG到OSD的映射**，将PGID和集群拓扑作为哈希输入，并使用CRUSH的rule对计算过程进行调整，进而实现可靠性、自动平衡等（第二级都是**第一章中讲到的**）。最终，**pool以PG作为基本单位进行组织**，其实际是**一些对象的逻辑载体**。
+**两级映射均使用伪随机哈希函数**，以保证均匀性。**第一级为静态映射**，将**任何前端类型的应用数据**按照固定大小切割、编号后，作为哈希输入**映射到PG**；**第二级实现PG到OSD的映射**，将PGID和集群拓扑作为哈希输入，并使用CRUSH进行调整，进而实现可靠性、自动平衡等（第二级都是**第一章中讲到的**）。最终，**pool以PG作为基本单位进行组织**，其实际是**一些对象的逻辑载体**。
 
 ---
 
 ### 2.1.2.PGID的生成
 
-集群所有的pool由Monitor统一管理，**每个pool也有pool-id**（为保证pool-id的全局唯一性，Monitor也要求实现分布式一致性，目前采用Paxos实现），因此**PG只需要分配一个pool内唯一的编号，然后和pool-id结合**即可保证PGID的全局唯一性，例如pool-id为1，该pool指定了256个PG，则PGID为1.0, 1.1, ..., 1.255形式，这样就**维持了扁平寻址空间**。
+集群的pool由Monitor统一管理，**每个pool也有pool-id**（为保证pool-id的全局唯一性，Monitor也要求实现分布式一致性，目前采用Paxos实现），因此**PG只需要分配一个pool内唯一的编号，然后和pool-id结合**即可保证PGID的全局唯一性，例如pool-id为1，该pool指定了256个PG，则PGID为1.0, 1.1, ..., 1.255形式，这样就**维持了扁平寻址空间**。
 
 Ceph通过C/S(Client/Server)模式实现外部应用和存储集群的数据交互，客户段访问集群时，**需要由特定类型的client和操作对象名**（例如RBD应用，形如rbd_data.12d72ae8944a.00000000000002a7j的字符串)，**计算出32位哈希值**，**取模后根据归属的pool就能找到对象所在PG及PGID**。假定pool-id为1的某个对象计算哈希值为0x4979FA12，PG数量为256，则有：
 
@@ -1894,3 +1894,241 @@ write2:[4096,8192)
 write3:[8192,12288)
 ...
 ```
+
+不做任何处理时为2个满条带+4个RMW（浅灰1满+1RMW，中灰2RMW，深灰1RMW+1满）：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20250111171015.png)
+
+而引入缓存时，通过合并可以减少RMW数目，如上述过程可以用4个stripe的一次满条带写完成：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/3/20250111171334.png)
+
+纠删码的写缓存应该为对象级别，难点在于批量写入的时机。定时器驱动、阈值（水位）驱动或结合两种方法（任一条件满足则写入）是常见思路。写操作合并会提高写时延，增加数据丢失风险。
+
+无法避免RMW时（如完全随机写），需要减少读操作，通常会预先计算需要补齐读的块，而不是每次都满条带读，例如在上图中，进行[0,2048)的覆盖写（块大小1K），对应条带[0,3072)仅需读取[2048,3072)，即第三个块即可。
+
+---
+
+## 3.6.日志
+
+纠删码的写本质都是分布式写，需要用PG级别的日志来保证数据一致性，例如掉电时回滚（未发送完成应答）和前滚（已发送完成应答）日志。
+
+多副本通过最新日志对应PG实例进行前滚即可修复损坏对象。而纠删码则要在覆盖写发生前将被覆盖内容进行备份。
+
+---
+
+## 3.7.Scrub
+
+Scrub指数据扫描，通过重新计算校验和，再与原校验和进行比对，以检测静默数据错误。多副本由PG实例自行扫描，纠删码则有两种方案：
+
+一种方案是Primary Shard生成和保存校验和，Scrub时Primary Shard读取数据并重新计算、比对。缺点是严重影响系统性能，少量修改也会触发全部读取和计算，且有大量跨节点的读流量。
+
+另一种和多副本类似，每个PG实例保证分片的正确性。编写时暂无存储方案，因此该版本暂时禁止纠删码的Scrub。
+
+---
+
+# 4.总结与展望
+
+纠删码带来了较高的存储空间收益，适用于时延不敏感的冷数据，如备份数据。
+
+但相较于多副本，纠删码实现更复杂，且性能更差。
+
+
+
+---
+
+# 迁移之美——PG读写流程与状态迁移详解
+
+PG的复杂源于定位复杂：首先，在架构上，PG位于RADOS层的中间——向上负责接收和处理客户端请求，向下负责将请求翻译到事务，是ceph核心中的核心。其次，PG是组成存储池的基本单位，很多特性依托于PG实现，例如多副本和纠删码。最后，容灾域备份策略对应的不同节点的同步、数据修复也依赖PG来完成。
+
+PG最重要的特性是可以根据CRUSH结果在OSD之间自由迁移，这是自动数据恢复、自动数据平衡等高级特性的基础。
+
+---
+
+# 1.PG概述
+
+对象大小一般是固定的，且不会设计的很大。PG是一些对象的集合——基于对象名称（和元数据）生成哈希值，对存储池的PG数目执行stable_mod后，得到对应的PGID。
+
+以PG对对象进行二次组织有如下收益：
+
+1）PG数目严格可控，基于PG精确控制单个OSD乃至节点的资源消耗成为可能。
+
+2）PG数目远小于对象数目，且PG数目和PGID都相对固定，因此以PG为单位应用备份策略和数据同步、迁移等难度更小且灵活。
+
+而PG的引入增大了数据管理粒度，保证数据强一致性极具挑战性。下表为PG常用术语和概念：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113110107.png)
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113110230.png)
+
+---
+
+# 2.读写流程
+
+读写请求都以对象为基本单位。
+
+**（1）head对象、克隆对象和snapdir对象**
+
+**head对象即原始对象**。没有快照机制时，直接修改原始对象即可。引入快照机制之后，为支持快照回滚，可以考虑用COW预先克隆一份，但也要考虑**两个特殊场景——删除和重新创建原始对象**。
+
+删除原始对象后（且仍被有效的快照引用），需要借助**snapdir对象来保存历史信息**，以便进行快照回滚。snapdir对象保存历史快照及克隆相关信息。
+
+重新创建原始对象且存在snapdir对象时，需要清理snapdir对象，并同步转移其信息到原始对象。
+
+对象的两个关键属性**OI（Object Info）和SS（Snap Set）**分别保存对象基本信息和快照信息。
+
+**（2）object_info_t**
+
+对象OI属性的磁盘结构，保存除快照外的对象元数据。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113152657.png)
+
+**（3）ObjectState**
+
+object_info_t的内存版本，增加了exists字段，表示对象是否逻辑上存在。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113153343.png)
+
+**（4）SnapSet**
+
+对象SS属性的磁盘结构，保存快照及克隆信息。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113153423.png)
+
+**（5）SnapSetContext**
+
+SnapSet的内存版本，主要增加了引用计数，便于共享。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113153512.png)
+
+**（6）SnapContext**
+
+前端应用自定义快照模式时（如RBD），下发的请求（op）会携带SnapContext；如果是存储池快照模式，那么SnapContext会只是当前存储池快照信息。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113154018.png)
+
+**（7）ObjectContext**
+
+保存了OI和SS属性，此外实现了一个属性缓存（主要缓存用户自定义属性对）和读写互斥锁机制，对客户端op保序。
+
+op操作对象前要获取对象上下文，读写则需要获取对应锁。虽然op_shardedwq可以对同一个PG的op保序，但因为写是异步的（写堵塞会让出CPU），所以需要一套额外的读写互斥锁机制。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113155543.png)
+
+**（8）Log**
+
+用于解决数据一致性问题，使用PG元数据对象的omap保存。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113170823.png)
+
+所有日志在PG中使用公共日志队列管理：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250113170947.png)
+
+**（9）OpContext**
+
+单个op可能操作多个对象，需要分别记录上下文和互斥锁；涉及修改操作时，会产生一条/多条日志；涉及异步操作时，需要注册一个/多个回调函数；并且需要收集读写次数、字节数等统计，后续上报到Monitor。由此引入OpContext
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250114111631.png)
+
+**（10）RepGather**
+
+包含修改操作的op需要执行副本间的分布式写，Primary完成封装后，由RepGather接管。
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250114111642.png)
+
+有了上述预备知识，可以分析客户端读写流程大致分为四个阶段：
+
+1）OSD收到读写请求，封装op并发送到PG。
+
+2）PG检查执行条件后，执行op。
+
+3）只包含读操作时，执行同步读（多副本）或异步读（纠删码），完成后应答客户端。
+
+4）包含写操作时，由Primary生成操作原始对象的事务和日志，并提交到PGBackend，其按照备份策略为每个PG分发真正需要执行的本地事务，Primary收到所有副本的写入完成应答后，应答客户端。
+
+---
+
+## 2.1.消息接收与分发
+
+OSD绑定的Public Messenger收到客户端读写op后，通过OSD注册的回调函数ms_fast_dispatch进行快速派发（OSD是Dispatcher的子类，后者负责派发Messenger的消息）：
+
+	1.基于消息（message）创建op，追踪并记录消息的Epoch。
+	2.查找关联的客户端会话上下文，将op加入其中的waiting_on_map队列，遍历waiting_on_map队列，如果op的Epoch大于OSD当前OSDMap的Epoch，则进一步派发到op_shardedwq队列。
+	3.如果waiting_on_map不为空，则其中至少有一个op有更新的Epoch，将其加入全局session_waiting_for_map集合，汇集了需要等待更新OSDMap后才能处理的上下文。
+
+op_shardedwq是OSD内部的op工作队列，内部实际存在多个队列，其最终关联osd_op_tp线程池，负责实际处理op。osd_op_num_shards控制op_shardedwq中工作队列数目s，osd_op_num_threads_per_shard控制工作队列中的服务线程数t，osd_op_tp总线程数为s*t。
+
+op_shardedwq的工作队列和osd_op_tp的线程通过如下方式绑定：
+
+	1.对线程编号：[0,s*t-1]。
+	2.对工作队列编号：[0,s-1]。
+	3.线程编号对s取模，得到[0,s-1]范围的结果，将对应[0,s*t-1]中的下标直接作为对应工作队列的索引。
+
+接下来需要保证op在多个队列中的均匀分布，因为op最终由特定PG执行，PG在OSD间均匀分布，所以使用PGID对队列个数取模后得到op需要的索引，就能保证op的均匀分布，同时这样还能对同一PG的op保序。
+
+op_shardedwq内部工作队列默认为WeightedPriorityQueue，基于权重进行调度。当op的优先级大于等于阈值osd_op_queue_cut_off时，队列工作在纯优先级模式（严格优先级模式）：
+
+	队列内按优先级划分为优先级队列，优先级队列再根据客户端地址分为会话子队列。入队时，op进入对应的会话子队列队尾。出队时，会找到优先级最高的优先级队列，根据当前指针对应的会话子队列队头出队，同时指针移动到下一个会话子队列（防止op饿死）。
+
+op的优先级小于阈值时，则队列工作在基于权重的Round-robin调度模式，其与纯优先级模式的区别在于：
+
+	出队时根据权重随机选择队列，保证低优先级客户端op永远不会被饿死。
+
+op成功加入工作队列后，服务线程被唤醒，找到PG后由其执行op。
+
+---
+
+## 2.2.do_request
+
+do_request是PG处理op的第一步，主要完成全局（PG级别）的检查：
+
+1）op的Epoch更新时，则需等待PG同步OSDMap后处理。
+
+2）op能否被丢弃，例如：客户端断开、PG切换到更新的Interval、op在PG分裂前发送等。
+
+3）PG不是Active状态时堵塞客户端op（PG内部op可以处理），等待Active状态。
+
+具体处理逻辑如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250115195637.png)
+
+因为op可能被各种原因推迟，所以PG内维护了多种op重试队列，均为FIFO队列且严格有序，如下表所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250115195805.png)
+
+---
+
+## 2.3.do_op
+
+通过do_request校验确认是来自客户端的op，通过do_op进行处理，其主要进行对象级别的检查：
+
+1）根据op的操作类型，初始化标志位，例如[CEPH_OSD_RMW_FLAG_]READ说明op携带读操作、WRITE说明op携带写操作、RWORDERED说明需要对op进行读写保序等。
+
+2）合法性校验，出现以下情况的op不合法：
+
+	1.PG不包含op携带的对象（即检查对象hash值对PG的bits取模后是否等于PGID）。
+	2.携带可以并发执行标志CEPH_OSD_FLAG_PARALLELEXEC。
+	3.携带可被Primary/Replica执行标志CEPH_OSD_FLAG_BALANCE[LOCALIZE]_READS，但当前PG既不是Primary也不是Replica（例如Stray）。
+	4.客户端没有能力/权限执行对应op（例如客户端只有读权限但op中有写操作）。
+	5.对象名称、key或命名空间长度超过最大限制（BlueStore无此限制）。
+	6.客户端在黑名单中。
+	7.op在集群被标记Full之前发送且没有CEPH_OSD_FLAG_FULL_FORCE标志。
+	8.所在OSD空间不足。
+	9.包含写操作且试图访问快照对象。
+	10.包含写操作且一次写入数据量超过osd_max_write_size。
+
+3）op携带的对象是否不可读/处于降级状态/正在被Scrub，是则加入对应队列。
+
+4）检查op是否为重发（reqid是否在Log中出现过）。
+
+5）获取对象上下文OpContext，通过execute_ctx真正执行op
+
+do_op的具体执行流程如下图所示：
+
+![](https://raw.githubusercontent.com/HentaiYang/Pics/main/NoteBooks/ceph/4/20250115200030.png)
+
+<u>[TODO：书中提出了对**可用存储空间控制**和**对象上下文**的补充，较多暂不总结]</u>
+
+
+
